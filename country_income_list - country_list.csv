@@ -1,0 +1,131 @@
+country,type
+Afghanistan,low
+Aland Islands,high
+Albania,upper_mid
+Algeria,low_mid
+American Samoa,upper_mid
+Andorra,high
+Angola,low_mid
+Antigua,high
+Argentina,upper_mid
+Armenia,upper_mid
+Australia,high
+Austria,high
+Azerbaijan,upper_mid
+Bahamas,high
+Bahrain,high
+Bangladesh,low_mid
+Belarus,upper_mid
+Belgium,high
+Belize,upper_mid
+Benin,low_mid
+Bolivia,low_mid
+Bosnia and Herzegovina,upper_mid
+Botswana,upper_mid
+Brazil,upper_mid
+Bulgaria,upper_mid
+Burkina Faso,low
+Cambodia,low_mid
+Cameroon,low_mid
+Canada,high
+Central African Republic,low
+Chile,high
+Colombia,upper_mid
+Costa Rica,upper_mid
+Côte d'Ivoire,low_mid
+Croatia,high
+Cyprus,high
+Czech Republic,high
+Democratic Republic of the Congo,low
+Denmark,high
+Dominica,upper_mid
+Dominican Republic,upper_mid
+Ecuador,upper_mid
+Egypt,low_mid
+El Salvador,low_mid
+Ethiopia,low
+Finland,high
+France,high
+Germany,high
+Ghana,low_mid
+Greece,high
+Guatemala,upper_mid
+Guinea,low
+Haiti,low
+Honduras,low_mid
+Hong Kong,high
+Hungary,high
+India,low_mid
+Indonesia,upper_mid
+Iraq,upper_mid
+Ireland,high
+Israel,high
+Italy,high
+Japan,high
+Jordan,upper_mid
+Kazakhstan,upper_mid
+Kenya,low_mid
+Kuwait,high
+Kyrgyzstan,low_mid
+Laos,low_mid
+Lebanon,upper_mid
+Libya,upper_mid
+Luxembourg,high
+Macau,high
+Madagascar,low
+Malaysia,upper_mid
+Mali,low
+Mauritania,low_mid
+Mexico,upper_mid
+Moldova,low_mid
+Morocco,low_mid
+Mozambique,low
+Myanmar,low_mid
+Nepal,low_mid
+Netherlands,high
+New Zealand,high
+Nicaragua,low_mid
+Nigeria,low_mid
+Norway,high
+Oman,high
+Pakistan,low_mid
+Palestine,low_mid
+Panama,high
+Paraguay,upper_mid
+Peru,upper_mid
+Philippines,low_mid
+Poland,high
+Portugal,high
+"Puerto Rico, U.S.",high
+Qatar,high
+Romania,high
+Russia,upper_mid
+Saudi Arabia,high
+Senegal,low_mid
+Serbia,upper_mid
+Singapore,high
+Slovakia,high
+Slovenia,high
+South Africa,upper_mid
+South Korea,high
+Spain,high
+Sri Lanka,low_mid
+Sudan,low
+Sweden,high
+Switzerland,high
+Taiwan,high
+Tanzania,low_mid
+Thailand,upper_mid
+Tunisia,low_mid
+Turkey,upper_mid
+Uganda,low
+Ukraine,low_mid
+United Arab Emirates,high
+United Kingdom,high
+Uruguay,high
+Uzbekistan,low_mid
+Venezuela,upper_mid
+Vietnam,low_mid
+Western Sahara,low_mid
+Yemen,low
+Zimbabwe,low_mid

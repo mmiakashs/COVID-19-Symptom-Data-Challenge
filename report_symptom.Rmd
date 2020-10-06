@@ -1,0 +1,1713 @@
+---
+title: "Symptom Challenge"
+output:
+  pdf_document: 
+    number_sections: true
+  # word_document: default
+  # html_document: default
+---
+
+
+```{r include=FALSE}
+library(ggplot2)
+library(ggpubr)
+library(GGally)
+library(devtools)
+library(ggbiplot)
+
+library(lattice)
+library(data.table)
+library(corrr)
+library(dplyr)
+library(randomForest) 
+library(stringr)
+library(ggeasy)
+library(forecast)
+library(xts)
+library(MASS)
+library(lindia)
+library(bookdown)
+```
+
+```{r include=FALSE}
+# function to input files into a list
+
+file.inputl <- function(my.path)
+{
+    my.dir <- getwd()
+    setwd(my.path)
+    my.files <- list.files(pattern=".csv")
+    acts <- lapply(my.files,read.csv)
+    setwd(my.dir)
+    return(acts)
+}
+
+# Function to create a data frame as the combination of multiple data frames in a list.
+
+
+combine.data <- function(Data.List, Vars)
+{
+    DF <- rbind(Data.List[[1]][, Vars])
+    for(i in 2:length(Data.List))
+    {
+        DF <- rbind(DF, Data.List[[i]][, Vars])
+    }
+    DF
+}
+
+panel.cor <- function(x, y, digits=2, prefix="", cex.cor)
+{
+    usr <- par("usr"); on.exit(par(usr))
+    par(usr = c(0, 1, 0, 1))
+    r <- round(abs(cor(x, y, use = "complete.obs")), 2)
+    txt <- format(c(r, 0.123456789), digits=digits)[1]
+    txt <- paste(prefix, txt, sep="")
+    if(missing(cex.cor)) cex.cor <- 0.8/strwidth(txt)
+    text(0.5, 0.5, txt, cex = 2)
+}
+
+panel.hist <- function(x, ...)
+{
+    usr <- par("usr"); on.exit(par(usr))
+    par(usr = c(usr[1:2], 0, 1.5) )
+    h <- hist(x, plot = FALSE)
+    breaks <- h$breaks; nB <- length(breaks)
+    y <- h$counts; y <- y/max(y)
+    rect(breaks[-nB], 0, breaks[-1], y,
+    col="steelblue2", ...)
+}
+
+
+uva.pairs <- function(vars, ...)
+{
+	args <- list(...)
+	
+	if(is.matrix(vars) | is.data.frame(vars)){
+		if(is.null(args$labels))pairs(vars, lower.panel = panel.smooth, upper.panel = panel.cor, diag.panel = panel.hist, main = args$main)
+		else(pairs(vars, lower.panel = panel.smooth, upper.panel = panel.cor, diag.panel = panel.hist, main = args$main, labels = args$labels))
+		}
+	else(if(is.character(vars)){
+		if(is.null(args$labels))pairs(formula(vars), lower.panel = panel.smooth, upper.panel = panel.cor, diag.panel = panel.hist, main = args$main, data = args$data)
+		else(pairs(formula(vars), lower.panel = panel.smooth, upper.panel = panel.cor, diag.panel = panel.hist, main = args$main, data = args$data, labels = args$labels))} 
+	else(cat("You must enter a matrix, dataframe or formula")))
+	}
+```
+
+```{r echo=FALSE, message=FALSE, warning=FALSE}
+data_dir <- '/media/akashs/MAMA/covid/umd_global'
+
+global_data_files <- file.inputl(data_dir)
+
+comvar <- intersect(colnames(global_data_files[[1]]), colnames(global_data_files[[2]]))
+# print(comvar)
+
+# the combined data frame
+global_data <- combine.data(global_data_files,comvar)
+
+country_income_list <- read.csv(file = '/home/akashs/repo/symptom_challenge/country_income_list - country_list.csv')
+
+for ( col in 1:ncol(global_data)){
+    colnames(global_data)[col] <-  sub("smoothed_", "", colnames(global_data)[col])
+}
+
+for ( col in 1:ncol(global_data)){
+    colnames(global_data)[col] <-  sub("pct_", "", colnames(global_data)[col])
+}
+
+#for ( col in 1:ncol(global_data)){
+#    colnames(global_data)[col] <-  sub("_weighted", "_w", colnames(global_data)[col])
+#}
+
+#for ( col in 1:ncol(global_data)){
+#    colnames(global_data)[col] <-  sub("_weighted", "", colnames(global_data)[col])
+#}
+global_data$Date <- as.Date(global_data$date)
+global_data$DateMonth <- month(global_data$Date)
+global_data$DateWeek <- format(global_data$Date, "%V")
+
+low_income_country = country_income_list[country_income_list$type=="low", "country"]
+low_mid_income_country = country_income_list[country_income_list$type=="low_mid", "country"]
+upper_mid_income_country = country_income_list[country_income_list$type=="upper_mid", "country"]
+high_income_country = country_income_list[country_income_list$type=="high", "country"]
+```
+
+```{r echo=FALSE, message=FALSE, warning=FALSE}
+us_data <- read.csv(file = '/media/akashs/MAMA/covid/cmu-overall-state-smoothed.csv')
+
+for ( col in 1:ncol(us_data)){
+    colnames(us_data)[col] <-  sub("smoothed_", "", colnames(us_data)[col])
+}
+
+for ( col in 1:ncol(us_data)){
+    colnames(us_data)[col] <-  sub("pct_", "", colnames(us_data)[col])
+}
+us_data$Date <- as.Date(us_data$date)
+```
+
+```{r echo=FALSE, message=FALSE, warning=FALSE}
+plot_gen.income_country <- function(tm_colnames,tm_country, tm_age_list,fig_title, which_month=0)
+{
+    month_list <- c("JAN", "FEB", "MAR", "APR", "MAY", "JUN", "JUL", "AUG", "SEP", "OCT", "NOV")
+    tm_fill <- c("#60A1F5", "#83E68C", "#F5DD65", "#954FF5")
+    tm_global_data <- global_data
+    if(which_month!=0){
+      tm_global_data$DateMonth <- month(tm_global_data$Date)
+      tm_global_data <- tm_global_data[tm_global_data$DateMonth==which_month,]
+      fig_title <- paste(fig_title, " (", month_list[which_month]," 2020)", sep = "")
+    }
+    else{
+      fig_title <- paste(fig_title, " (APR-SEP 2020)", sep = "")
+    }
+    
+    figList <- list()
+    for(i in 1:4){
+      tm <- tm_global_data[tm_global_data$age_bucket==tm_age_list[i], ]
+      dim(tm)
+      tm <- tm[tm$country_agg %in% tm_country, tm_colnames]
+      dim(tm)
+      for ( col in 1:ncol(tm)){
+          colnames(tm)[col] <-  sub("_weighted", "", colnames(tm)[col])
+      }
+      tm_corr <- correlate(tm)
+    
+      tm_correlate_focus <- focus(tm_corr, cli)
+      #tm_correlate_focus <- mutate(tm_correlate_focus,rowname = factor(rowname, levels = rowname[order(cli)]))
+    
+      Namelist <- paste( "age_bucket", i, sep = '' )
+      figList[[ Namelist ]] <- ggplot(tm_correlate_focus, aes(x = rowname, y = cli)) +
+          geom_bar(stat = "identity", fill=tm_fill[i], alpha=0.8) +
+          ylab("Correlation with cli") +
+          scale_x_discrete(labels = function(x) str_wrap(gsub("_", " ", x), width = 10))+
+          xlab("Behavioral aspects")+
+          ggtitle(paste("Age Group: ", tm_age_list[i], sep = ""))+
+          theme(plot.title = element_text(hjust = 0.5))
+          
+    }
+    
+    p1 <- ggarrange(plotlist=figList, ncol = 4, nrow = 1)+
+      ggtitle(fig_title)+
+          theme(plot.title = element_text(hjust = 0.5, size = 20))
+    return(p1)
+}
+```
+```{r echo=FALSE, message=FALSE, warning=FALSE, fig.width=10, fig.height=3.75}
+plot_gen.us_states <- function(tm_colnames, tm_age_list,fig_title, which_month=0)
+{
+    month_list <- c("JAN", "FEB", "MAR", "APR", "MAY", "JUN", "JUL", "AUG", "SEP", "OCT", "NOV")
+    tm_fill <- c("#60A1F5", "#83E68C", "#F5DD65", "#954FF5")
+    tm_us_data <- us_data
+    if(which_month!=0){
+      tm_us_data$DateMonth <- month(tm_us_data$Date)
+      tm_us_data <- tm_us_data[tm_us_data$DateMonth==which_month,]
+      fig_title <- paste(fig_title, " (", month_list[which_month]," 2020)", sep = "")
+    }
+    else{
+      fig_title <- paste(fig_title, " (APR-SEP 2020)", sep = "")
+    }
+    
+    figList <- list()
+    for(i in 1:4){
+      tm <- tm_us_data[tm_us_data$age_bucket==tm_age_list[i], tm_colnames]
+      
+      for ( col in 1:ncol(tm)){
+          colnames(tm)[col] <-  sub("_weighted", "", colnames(tm)[col])
+      }
+      for ( col in 1:ncol(tm)){
+          colnames(tm)[col] <-  sub("mean_", "", colnames(tm)[col])
+      }
+      tm_corr <- correlate(tm)
+    
+      tm_correlate_focus <- focus(tm_corr, cli)
+    
+      Namelist <- paste( "age_bucket", i, sep = '' )
+      figList[[ Namelist ]] <- ggplot(tm_correlate_focus, aes(x = rowname, y = cli)) +
+          geom_bar(stat = "identity", fill=tm_fill[i], alpha=0.8) +
+          ylab("Correlation with cli") +
+          scale_x_discrete(labels = function(x) str_wrap(gsub("_", " ", x), width = 10))+
+          xlab("Behavioral aspects")+
+          ggtitle(paste("Age Group: ", tm_age_list[i], sep = ""))+
+          theme(plot.title = element_text(hjust = 0.5))
+          
+    }
+    
+    p1 <- ggarrange(plotlist=figList, ncol = 4, nrow = 1)+
+      ggtitle(fig_title)+
+          theme(plot.title = element_text(hjust = 0.5, size = 20))
+    return(p1)
+}
+```
+# Impact of crowd behavior on COVID like illness
+
+```{r echo=FALSE, message=FALSE, warning=FALSE, fig.width=25, fig.height=20, fig.cap="Correlation between COVID like illness (CLI %) and various behavioural aspects in low-middle and high income countries (APR-SEP 2020)"}
+tm_colnames = c("cli_weighted",
+                "no_public_weighted",
+                    "worked_outside_home_weighted", "grocery_outside_home_weighted", 
+                    "ate_outside_home_weighted", "spent_time_with_non_hh_weighted",
+                    "attended_public_event_weighted", "direct_contact_with_non_hh_weighted",
+                    "used_public_transit_weighted")
+tm_age_list <- c("18-34", "35-54", "55+", "overall")
+tm_fill <- c("#60A1F5", "#83E68C", "#F5DD65", "#954FF5")
+tm_country = union(low_income_country, low_mid_income_country)
+tm_country = union(tm_country, upper_mid_income_country)
+
+p1 <- plot_gen.income_country(tm_colnames, tm_country, tm_age_list,
+                              "Correlation between COVID like illness (CLI %) and various behavioural aspects in low-middle income countries ")
+
+tm_country = high_income_country
+p2 <- plot_gen.income_country(tm_colnames, tm_country, tm_age_list,
+                              "Correlation between COVID like illness (CLI %) and various behavioural aspects in high income countries ")
+
+ggarrange(p1, p2, ncol = 1, nrow = 3)
+```
+
+```{r echo=FALSE, message=FALSE, warning=FALSE, fig.width=25, fig.height=20, fig.cap="Correlation between covid like illness (cli %) and various behavioural aspects in countries with the highest COVID cases (APR-SEP 2020)"}
+tm_colnames = c("cli_weighted",
+                "no_public_weighted",
+                    "worked_outside_home_weighted", "grocery_outside_home_weighted", 
+                    "ate_outside_home_weighted", "spent_time_with_non_hh_weighted",
+                    "attended_public_event_weighted", "direct_contact_with_non_hh_weighted",
+                    "used_public_transit_weighted")
+tm_age_list <- c("18-34", "35-54", "55+", "overall")
+tm_fill <- c("#60A1F5", "#83E68C", "#F5DD65", "#954FF5")
+tm_country = c("India")
+
+p1 <- plot_gen.income_country(tm_colnames, tm_country, tm_age_list,
+                              "Correlation between covid like illness (cli %) and various behavioural aspects in India")
+
+tm_country = c("Brazil")
+p2 <- plot_gen.income_country(tm_colnames, tm_country, tm_age_list,
+                              "Correlation between covid like illness (cli %) and various behavioural aspects in Brazil")
+
+
+tm_country = c("Russia")
+p3 <- plot_gen.income_country(tm_colnames, tm_country, tm_age_list,
+                              "Correlation between covid like illness (cli %) and various behavioural aspects in Russia")
+
+
+tm_colnames = c("cli_weighted",
+                    "worked_outside_home_weighted", "avoid_contact_all_or_most_time_weighted", 
+                    "mean_outside_hh_contact_at_work_ct_weighted", "mean_outside_hh_contact_shopping_ct_weighted",
+                    "mean_outside_hh_contact_shopping_ct_weighted", "mean_outside_hh_contact_in_social_gatherings_ct_weighted")
+
+tm_age_list <- c("18-34", "35-54", "55+", "overall")
+tm_fill <- c("#60A1F5", "#83E68C", "#F5DD65", "#954FF5")
+
+p4 <- plot_gen.us_states(tm_colnames, tm_age_list,
+                              "Correlation between covid like illness (cli %) and various behavioural aspects in USA")
+
+ggarrange(p4, p1, p2, p3, ncol = 1, nrow = 4)
+  # ggtitle()+
+  #         theme(plot.title = element_text(hjust = 0.5, face="bold", size = 22))
+```
+
+
+
+
+```{r echo=FALSE, message=FALSE, warning=FALSE, fig.width=10, fig.height=3.75}
+plot_gen.us_states_indi <- function(tm_colnames, tm_age_list, fig_title, state_list, which_month=0)
+{
+    month_list <- c("JAN", "FEB", "MAR", "APR", "MAY", "JUN", "JUL", "AUG", "SEP", "OCT", "NOV")
+    tm_fill <- c("#60A1F5", "#83E68C", "#F5DD65", "#954FF5")
+    tm_us_data <- us_data
+    if(which_month!=0){
+      tm_us_data$DateMonth <- month(tm_us_data$Date)
+      tm_us_data <- tm_us_data[tm_us_data$DateMonth==which_month,]
+      fig_title <- paste(fig_title, " (Month: ", month_list[which_month]," 2020)", sep = "")
+    }
+    else{
+      fig_title <- paste(fig_title, " (Month: APR-SEP 2020)", sep = "")
+    }
+    
+    stateFigs <- list()
+    for (state in state_list) {
+      tm1 <- tm_us_data[tm_us_data$state_code==state,]
+      figList <- list()
+      for(i in 1:4){
+        tm <- tm1[tm1$age_bucket==tm_age_list[i], tm_colnames]
+        
+        for ( col in 1:ncol(tm)){
+            colnames(tm)[col] <-  sub("_weighted", "", colnames(tm)[col])
+        }
+        for ( col in 1:ncol(tm)){
+            colnames(tm)[col] <-  sub("mean_", "", colnames(tm)[col])
+        }
+        tm_corr <- correlate(tm)
+      
+        tm_correlate_focus <- focus(tm_corr, cli)
+      
+        Namelist <- paste( "age_bucket", i, sep = '' )
+        figList[[ Namelist ]] <- ggplot(tm_correlate_focus, aes(x = rowname, y = cli)) +
+            geom_bar(stat = "identity", fill=tm_fill[i], alpha=0.8) +
+            ylab("Correlation with cli") +
+            scale_x_discrete(labels = function(x) str_wrap(gsub("_", " ", x), width = 10))+
+            xlab("Behavioral aspects")+
+            ggtitle(paste("Age Group: ", tm_age_list[i], sep = ""))+
+            theme(plot.title = element_text(hjust = 0.5))
+      }
+      sub_fig_title <- paste( "Correlation between covid like illness (CLI %) and various behavioural aspects in ", toupper(state), sep = '' )
+      stateFigs[[state]] <- ggarrange(plotlist=figList, ncol = 4, nrow = 1)+
+                                ggtitle(sub_fig_title)+
+                                    theme(plot.title = element_text(hjust = 0.5, size = 20))
+    }
+    
+    resFig <- ggarrange(plotlist=stateFigs, ncol = 1, nrow = length(state_list))+
+      ggtitle(fig_title)+
+          theme(plot.title = element_text(hjust = 0.5, face = "bold", size = 22))
+    return(resFig)
+}
+```
+
+```{r echo=FALSE, message=FALSE, warning=FALSE, fig.width=20, fig.height=20, fig.cap="Correlation between covid like illness (CLI %) and various crowd behavioural aspects in different USA states (APR-SEP 2020)"}
+tm_colnames = c("cli_weighted",
+                    "worked_outside_home_weighted", "avoid_contact_all_or_most_time_weighted", 
+                    "mean_outside_hh_contact_at_work_ct_weighted", "mean_outside_hh_contact_shopping_ct_weighted",
+                    "mean_outside_hh_contact_in_social_gatherings_ct_weighted")
+
+tm_age_list <- c("18-34", "35-54", "55+", "overall")
+tm_fill <- c("#60A1F5", "#83E68C", "#F5DD65", "#954FF5")
+state_list <- c("ca", "tx", "fl", "ny", "ga")
+
+resFig <- plot_gen.us_states_indi(tm_colnames, tm_age_list,
+                              "Correlation between covid like illness (CLI %) and various crowd behavioural aspects in different USA states", 
+                              state_list,
+                              which_month = 0)
+resFig
+```
+
+```{r echo=FALSE, message=FALSE, warning=FALSE, fig.width=20, fig.height=20, fig.cap="Correlation between covid like illness (CLI %) and various crowd behavioural aspects in different USA states (APR 2020)"}
+# resFig <- plot_gen.us_states_indi(tm_colnames, tm_age_list,
+#                               "Correlation between covid like illness (CLI %) and various crowd behavioural aspects in different USA states",
+#                               state_list,
+#                               which_month = 4)
+# resFig
+```
+```{r echo=FALSE, message=FALSE, warning=FALSE, fig.width=20, fig.height=20, fig.cap="Correlation between covid like illness (CLI %) and various crowd behavioural aspects in different USA states (MAY 2020)"}
+# resFig <- plot_gen.us_states_indi(tm_colnames, tm_age_list,
+#                               "Correlation between covid like illness (CLI %) and various crowd behavioural aspects in different USA states",
+#                               state_list,
+#                               which_month = 5)
+# resFig
+```
+```{r echo=FALSE, message=FALSE, warning=FALSE, fig.width=20, fig.height=20, fig.cap="Correlation between covid like illness (CLI %) and various crowd behavioural aspects in different USA states (JUN 2020)"}
+# resFig <- plot_gen.us_states_indi(tm_colnames, tm_age_list,
+#                               "Correlation between covid like illness (CLI %) and various crowd behavioural aspects in different USA states",
+#                               state_list,
+#                               which_month = 6)
+# resFig
+```
+```{r echo=FALSE, message=FALSE, warning=FALSE, fig.width=20, fig.height=20, fig.cap="Correlation between covid like illness (CLI %) and various crowd behavioural aspects in different USA states (JUL 2020)"}
+# resFig <- plot_gen.us_states_indi(tm_colnames, tm_age_list,
+#                               "Correlation between covid like illness (CLI %) and various crowd behavioural aspects in different USA states",
+#                               state_list,
+#                               which_month = 7)
+# resFig
+```
+```{r echo=FALSE, message=FALSE, warning=FALSE, fig.width=20, fig.height=20, fig.cap="Correlation between covid like illness (CLI %) and various crowd behavioural aspects in different USA states (AUG 2020)"}
+# resFig <- plot_gen.us_states_indi(tm_colnames, tm_age_list,
+#                               "Correlation between covid like illness (CLI %) and various crowd behavioural aspects in different USA states",
+#                               state_list,
+#                               which_month = 8)
+# resFig
+```
+```{r echo=FALSE, message=FALSE, warning=FALSE, fig.width=20, fig.height=20, fig.cap="Correlation between covid like illness (CLI %) and various crowd behavioural aspects in different USA states (SEP 2020)"}
+# resFig <- plot_gen.us_states_indi(tm_colnames, tm_age_list,
+#                               "Correlation between covid like illness (CLI %) and various crowd behavioural aspects in different USA states",
+#                               state_list,
+#                               which_month = 9)
+# resFig
+```
+
+
+```{r echo=FALSE, message=FALSE, warning=FALSE, fig.width=10, fig.height=3.75}
+
+plot_gen.us_states.lagged_corr <- function(tm_colnames, tm_age_list, fig_title, state_list)
+{
+  month_list <- c("JAN", "FEB", "MAR", "APR", "MAY", "JUN", "JUL", "AUG", "SEP", "OCT", "NOV")
+  tm_fill <- c("#60A1F5", "#83E68C", "#F5DD65", "#954FF5")
+  tm_us_data <- us_data
+  
+  stateFigs <- list()
+  for (state in state_list) {
+    tm1 <- tm_us_data[tm_us_data$state_code==state,]
+    figList <- list()
+    col_len <- length(tm_colnames)
+    for(j in 1:col_len){
+      tm_colname <- tm_colnames[j]
+      tm_lag <- ""
+      age_list_len <- length(tm_age_list)
+      age_data <- list()
+      for(i in 1:age_list_len){
+        tm <- tm1[tm1$age_bucket==tm_age_list[i], ]
+        
+        cv <- ccf(tm$cli_weighted ,tm[,tm_colname], 
+            lag=100, type=c("correlation"), 
+            na.action = na.pass,
+            plot=FALSE)
+        cor = cv$acf[,,1]
+        tm_lag = cv$lag[,,1]
+        
+        Namelist <- paste( "age_bucket", i, sep = '' )
+        age_data[[Namelist]] <- cor 
+      }
+      modify_colname <- gsub("_weighted", "", tm_colname)
+      modify_colname <- gsub("_", " ", modify_colname)
+      tm_figtitle <- paste("CLI vs ", modify_colname, sep = " ")
+      
+      tm_df <- data.frame(tm_lag, age_data)
+      colors <- c("18-34" = "#60A1F5", "35-54" = "#83E68C", "55+" = "#F5DD65", "overall"="#954FF5")
+      
+      figKey <- paste( "fig", j, sep = '' )
+      if(j==col_len){
+        figList[[figKey]] <- ggplot(tm_df)+
+                              geom_line(aes(y=age_bucket1, x=tm_lag, color="18-34"))+
+                              geom_line(aes(y=age_bucket2, x=tm_lag, color="35-54"))+
+                              geom_line(aes(y=age_bucket3, x=tm_lag, color="55+"))+
+                              geom_line(aes(y=age_bucket4, x=tm_lag, color="overall"))+
+                              ggtitle(tm_figtitle)+theme(plot.title = element_text(hjust = 0.5))+
+                              labs(x = "Time Lag (Days)",
+                                     y = "Correlation",
+                                     color = "Age Groups") +
+                                scale_color_manual(values=colors)
+      }
+      else{
+        figList[[figKey]] <- ggplot(tm_df)+
+                              geom_line(aes(y=age_bucket1, x=tm_lag), colour="#60A1F5")+
+                              geom_line(aes(y=age_bucket2, x=tm_lag), colour="#83E68C")+
+                              geom_line(aes(y=age_bucket3, x=tm_lag), colour="#F5DD65")+
+                              geom_line(aes(y=age_bucket4, x=tm_lag), colour="#954FF5")+
+                              ggtitle(tm_figtitle)+theme(plot.title = element_text(hjust = 0.5))+
+                              labs(x = "Time Lag (Days)",
+                                     y = "Correlation")
+      }
+    }
+    sub_fig_title <- paste( "Lagged correlation between covid like illness (CLI %) and various behavioural aspects in ", toupper(state), sep = '' )
+    stateFigs[[state]] <- ggarrange(plotlist=figList, ncol = length(tm_colnames), nrow = 1)+
+        ggtitle(sub_fig_title)+
+            theme(plot.title = element_text(hjust = 0.5, size = 20))
+  }
+  resFig <- ggarrange(plotlist=stateFigs, ncol = 1, nrow = length(state_list))+
+      ggtitle(fig_title)+
+          theme(plot.title = element_text(hjust = 0.5, face = "bold", size = 22))
+  return(resFig)
+}
+```
+
+```{r echo=FALSE, message=FALSE, warning=FALSE, fig.width=25, fig.height=20, fig.cap="Lagged correlation between covid like illness (CLI %) and various crowd behavioural aspects in different USA states"}
+tm_colnames = c("worked_outside_home_weighted", "avoid_contact_all_or_most_time_weighted", 
+                    "mean_outside_hh_contact_at_work_ct_weighted", "mean_outside_hh_contact_shopping_ct_weighted",
+                    "mean_outside_hh_contact_in_social_gatherings_ct_weighted")
+
+tm_age_list <- c("18-34", "35-54", "55+", "overall")
+tm_fill <- c("#60A1F5", "#83E68C", "#F5DD65", "#954FF5")
+state_list <- c("ca", "tx", "fl", "ny", "ga")
+
+resFig <- plot_gen.us_states.lagged_corr(tm_colnames, tm_age_list,
+                              "", 
+                              state_list)
+resFig
+```
+
+
+```{r echo=FALSE, message=FALSE, warning=FALSE}
+
+plot_gen.income_country.lagged_corr <- function(tm_colnames,tm_country, tm_age_list,fig_title)
+{
+  figList <- list()
+  col_len <- length(tm_colnames)
+  for(j in 1:col_len){
+    tm_lag <- ""
+    tm_colname <- tm_colnames[j]
+    age_list_len <- length(tm_age_list)
+    age_data <- list()
+    for(i in 1:age_list_len){
+      tm <- global_data[global_data$age_bucket==tm_age_list[i], ]
+      tm <- tm[tm$country_agg %in% tm_country, ]
+      
+      cv <- ccf(tm$cli_weighted ,tm[,tm_colname], 
+          lag=100, type=c("correlation"), 
+          na.action = na.pass,
+          plot=FALSE)
+      cor = cv$acf[,,1]
+      tm_lag = cv$lag[,,1]
+      
+      Namelist <- paste( "age_bucket", i, sep = '' )
+      age_data[[Namelist]] <- cor 
+    }
+    modify_colname <- gsub("_weighted", "", tm_colname)
+    modify_colname <- gsub("_", " ", modify_colname)
+    tm_figtitle <- paste("CLI vs ", modify_colname, sep = " ")
+    
+    tm_df <- data.frame(tm_lag, age_data)
+    colors <- c("18-34" = "#60A1F5", "35-54" = "#83E68C", "55+" = "#F5DD65", "overall"="#954FF5")
+    
+    figKey <- paste( "fig", j, sep = '' )
+    if(j==col_len){
+      figList[[figKey]] <- ggplot(tm_df)+
+                            geom_line(aes(y=age_bucket1, x=tm_lag, color="18-34"))+
+                            geom_line(aes(y=age_bucket2, x=tm_lag, color="35-54"))+
+                            geom_line(aes(y=age_bucket3, x=tm_lag, color="55+"))+
+                            geom_line(aes(y=age_bucket4, x=tm_lag, color="overall"))+
+                            ggtitle(tm_figtitle)+theme(plot.title = element_text(hjust = 0.5))+
+                            labs(x = "Time Lag (Days)",
+                                   y = "Correlation",
+                                   color = "Age Groups") +
+                              scale_color_manual(values=colors)
+    }
+    else{
+      figList[[figKey]] <- ggplot(tm_df)+
+                            geom_line(aes(y=age_bucket1, x=tm_lag), colour="#60A1F5")+
+                            geom_line(aes(y=age_bucket2, x=tm_lag), colour="#83E68C")+
+                            geom_line(aes(y=age_bucket3, x=tm_lag), colour="#F5DD65")+
+                            geom_line(aes(y=age_bucket4, x=tm_lag), colour="#954FF5")+
+                            ggtitle(tm_figtitle)+theme(plot.title = element_text(hjust = 0.5))+
+                            labs(x = "Time Lag (Days)",
+                                   y = "Correlation")
+    }
+  }
+  p1 <- ggarrange(plotlist= figList, ncol = length(tm_colnames), nrow = 1)+
+      ggtitle(fig_title)+
+          theme(plot.title = element_text(hjust = 0.5, size = 20))
+    return(p1)
+}
+```
+
+```{r echo=FALSE, message=FALSE, warning=FALSE, fig.width=25, fig.height=10,fig.cap="Lagged correlation between covid like illness (cli %) and various behavioural aspects in low-middle and high income countries"}
+tm_colnames = c("no_public_weighted","worked_outside_home_weighted", "grocery_outside_home_weighted", 
+                    "ate_outside_home_weighted", "spent_time_with_non_hh_weighted",
+                    "attended_public_event_weighted", "direct_contact_with_non_hh_weighted",
+                    "used_public_transit_weighted")
+tm_age_list <- c("18-34", "35-54", "55+", "overall")
+# tm_age_list <- c("18-34")
+tm_fill <- c("#60A1F5", "#83E68C", "#F5DD65", "#954FF5")
+tm_country = union(low_income_country, low_mid_income_country)
+tm_country = union(tm_country, upper_mid_income_country)
+
+p1 <- plot_gen.income_country.lagged_corr(tm_colnames, tm_country, tm_age_list,
+                              "Lagged correlation between covid like illness (cli %) and various behavioural aspects in low-middle income countries")
+
+tm_country = high_income_country
+p2 <- plot_gen.income_country.lagged_corr(tm_colnames, tm_country, tm_age_list,
+                              "Lagged correlation between covid like illness (cli %) and various behavioural aspects in high income countries ")
+
+tm_fig <- ggarrange(p1, p2, ncol = 1, nrow = 2)+
+  ggtitle("")+
+          theme(plot.title = element_text(hjust = 0.5, face="bold", size = 22))
+tm_fig
+```
+```{r echo=FALSE, message=FALSE, warning=FALSE, fig.width=25, fig.height=15,fig.cap="Lagged correlation between covid like illness (cli %) and various behavioural aspects in countries with highest COVID cases"}
+tm_country = c("India")
+p3 <- plot_gen.income_country.lagged_corr(tm_colnames, tm_country, tm_age_list,
+                              "Lagged correlation between covid like illness (cli %) and various behavioural aspects in India")
+
+tm_country = c("Brazil")
+p4 <- plot_gen.income_country.lagged_corr(tm_colnames, tm_country, tm_age_list,
+                              "Lagged correlation between covid like illness (cli %) and various behavioural aspects in Brazil")
+
+tm_country = c("Russia")
+p5 <- plot_gen.income_country.lagged_corr(tm_colnames, tm_country, tm_age_list,
+                              "Lagged correlation between covid like illness (cli %) and various behavioural aspects in Russia")
+
+tm_fig<-ggarrange(p3, p4, p5, ncol = 1, nrow = 3)+
+  ggtitle("")+
+          theme(plot.title = element_text(hjust = 0.5, face="bold", size = 22))
+tm_fig
+```
+
+```{r echo=FALSE, message=FALSE, warning=FALSE, fig.width=15, fig.height=10, fig.cap="Crowd behavior in low-middle and high income countries"}
+library(epitools)
+tm_colnames = c("no_public_weighted","worked_outside_home_weighted", "grocery_outside_home_weighted", 
+                    "ate_outside_home_weighted", "spent_time_with_non_hh_weighted",
+                    "attended_public_event_weighted", "direct_contact_with_non_hh_weighted",
+                    "used_public_transit_weighted","cli_weighted")
+
+colors <- c("No public contact" = "#60A1F5", "Worked outside home" = "#83E68C", "Grocery outside home" = "#F5DD65", "Ate outside home"="#954FF5", "Spent time with non-hh"="#FF0000", "Attended public event"="#FF0000", "Direct contact with non-hh"="#39D7F8",
+            "Used public transit"="#BAD94E", "COVID Like Illness (CLI)"="#CA9B62")
+
+tm_country = union(low_income_country, low_mid_income_country)
+tm_country = union(tm_country, upper_mid_income_country)
+tm <- global_data[global_data$country_agg %in% tm_country, ]
+# tm$DateMonth <- as.month(tm$Date)
+tm_agg <- aggregate(tm[tm_colnames], by=tm["DateMonth"], mean)
+p1 <- ggplot(tm_agg, aes(x=DateMonth)) +
+        geom_line(aes(y=no_public_weighted, x=DateMonth, color="No public contact"))+
+        geom_line(aes(y=worked_outside_home_weighted, x=DateMonth, color="Worked outside home"))+
+        geom_line(aes(y=grocery_outside_home_weighted, x=DateMonth, color="Grocery outside home"))+
+        geom_line(aes(y=ate_outside_home_weighted, x=DateMonth, color="Ate outside home"))+
+        geom_line(aes(y=spent_time_with_non_hh_weighted, x=DateMonth, color="Spent time with non-hh"))+
+        geom_line(aes(y=attended_public_event_weighted, x=DateMonth, color="Attended public event"))+
+        geom_line(aes(y=direct_contact_with_non_hh_weighted, x=DateMonth, color="Direct contact with non-hh"))+
+        geom_line(aes(y=used_public_transit_weighted, x=DateMonth, color="Used public transit"))+
+        geom_line(aes(y=cli_weighted, x=DateMonth, color="COVID Like Illness (CLI)"))+
+        scale_color_manual(values=colors)+
+        labs(x = "Month",
+             y = "Reported people (%)",
+             color = "Behavior")+
+        ggtitle("Crowd behavior in low-middle income countries")+
+            theme(plot.title = element_text(hjust = 0.5, size = 20))
+
+tm_country = high_income_country
+tm <- global_data[global_data$country_agg %in% tm_country, ]
+tm_agg <- aggregate(tm[tm_colnames], by=tm["DateMonth"], mean)
+p2 <- ggplot(tm_agg, aes(x=DateMonth)) +
+        geom_line(aes(y=no_public_weighted, x=DateMonth, color="No public contact"))+
+        geom_line(aes(y=worked_outside_home_weighted, x=DateMonth, color="Worked outside home"))+
+        geom_line(aes(y=grocery_outside_home_weighted, x=DateMonth, color="Grocery outside home"))+
+        geom_line(aes(y=ate_outside_home_weighted, x=DateMonth, color="Ate outside home"))+
+        geom_line(aes(y=spent_time_with_non_hh_weighted, x=DateMonth, color="Spent time with non-hh"))+
+        geom_line(aes(y=attended_public_event_weighted, x=DateMonth, color="Attended public event"))+
+        geom_line(aes(y=direct_contact_with_non_hh_weighted, x=DateMonth, color="Direct contact with non-hh"))+
+        geom_line(aes(y=used_public_transit_weighted, x=DateMonth, color="Used public transit"))+
+        geom_line(aes(y=cli_weighted, x=DateMonth, color="COVID Like Illness (CLI)"))+
+        scale_color_manual(values=colors)+
+        labs(x = "Month",
+             y = "Reported people (%)",
+             color = "Behavior")+
+        ggtitle("Crowd behavior in high income countries")+
+            theme(plot.title = element_text(hjust = 0.5, size = 20))
+
+ggarrange(p1,p2, ncol = 1, nrow = 2)
+```
+
+```{r echo=FALSE, message=FALSE, warning=FALSE, fig.width=15, fig.height=10, fig.cap="Crowd behavior in countries with the highest COVID cases (India, Brazil, Russia)"}
+
+tm_country = c("India")
+tm <- global_data[global_data$country_agg %in% tm_country, ]
+tm_agg <- aggregate(tm[tm_colnames], by=tm["DateMonth"], mean)
+p3 <- ggplot(tm_agg, aes(x=DateMonth)) +
+        geom_line(aes(y=no_public_weighted, x=DateMonth, color="No public contact"))+
+        geom_line(aes(y=worked_outside_home_weighted, x=DateMonth, color="Worked outside home"))+
+        geom_line(aes(y=grocery_outside_home_weighted, x=DateMonth, color="Grocery outside home"))+
+        geom_line(aes(y=ate_outside_home_weighted, x=DateMonth, color="Ate outside home"))+
+        geom_line(aes(y=spent_time_with_non_hh_weighted, x=DateMonth, color="Spent time with non-hh"))+
+        geom_line(aes(y=attended_public_event_weighted, x=DateMonth, color="Attended public event"))+
+        geom_line(aes(y=direct_contact_with_non_hh_weighted, x=DateMonth, color="Direct contact with non-hh"))+
+        geom_line(aes(y=used_public_transit_weighted, x=DateMonth, color="Used public transit"))+
+        geom_line(aes(y=cli_weighted, x=DateMonth, color="COVID Like Illness (CLI)"))+
+        scale_color_manual(values=colors)+
+        labs(x = "Month",
+             y = "Reported people (%)",
+             color = "Behavior")+
+        ggtitle("Crowd behavior in India")+
+            theme(plot.title = element_text(hjust = 0.5, size = 20))
+
+tm_country = c("Brazil")
+tm <- global_data[global_data$country_agg %in% tm_country, ]
+tm_agg <- aggregate(tm[tm_colnames], by=tm["DateMonth"], mean)
+p4 <- ggplot(tm_agg, aes(x=DateMonth)) +
+        geom_line(aes(y=no_public_weighted, x=DateMonth, color="No public contact"))+
+        geom_line(aes(y=worked_outside_home_weighted, x=DateMonth, color="Worked outside home"))+
+        geom_line(aes(y=grocery_outside_home_weighted, x=DateMonth, color="Grocery outside home"))+
+        geom_line(aes(y=ate_outside_home_weighted, x=DateMonth, color="Ate outside home"))+
+        geom_line(aes(y=spent_time_with_non_hh_weighted, x=DateMonth, color="Spent time with non-hh"))+
+        geom_line(aes(y=attended_public_event_weighted, x=DateMonth, color="Attended public event"))+
+        geom_line(aes(y=direct_contact_with_non_hh_weighted, x=DateMonth, color="Direct contact with non-hh"))+
+        geom_line(aes(y=used_public_transit_weighted, x=DateMonth, color="Used public transit"))+
+        geom_line(aes(y=cli_weighted, x=DateMonth, color="COVID Like Illness (CLI)"))+
+        scale_color_manual(values=colors)+
+        labs(x = "Month",
+             y = "Reported people (%)",
+             color = "Behavior")+
+        ggtitle("Crowd behavior in Brazil")+
+            theme(plot.title = element_text(hjust = 0.5, size = 20))
+
+tm_country = c("Russia")
+tm <- global_data[global_data$country_agg %in% tm_country, ]
+tm_agg <- aggregate(tm[tm_colnames], by=tm["DateMonth"], mean,na.action = na.omit)
+p5 <- ggplot(tm_agg, aes(x=DateMonth)) +
+        geom_line(aes(y=no_public_weighted, x=DateMonth, color="No public contact"))+
+        geom_line(aes(y=worked_outside_home_weighted, x=DateMonth, color="Worked outside home"))+
+        geom_line(aes(y=grocery_outside_home_weighted, x=DateMonth, color="Grocery outside home"))+
+        geom_line(aes(y=ate_outside_home_weighted, x=DateMonth, color="Ate outside home"))+
+        geom_line(aes(y=spent_time_with_non_hh_weighted, x=DateMonth, color="Spent time with non-hh"))+
+        geom_line(aes(y=attended_public_event_weighted, x=DateMonth, color="Attended public event"))+
+        geom_line(aes(y=direct_contact_with_non_hh_weighted, x=DateMonth, color="Direct contact with non-hh"))+
+        geom_line(aes(y=used_public_transit_weighted, x=DateMonth, color="Used public transit"))+
+        geom_line(aes(y=cli_weighted, x=DateMonth, color="COVID Like Illness (CLI)"))+
+        scale_color_manual(values=colors)+
+        labs(x = "Month",
+             y = "Reported people (%)",
+             color = "Behavior")+
+        ggtitle("Crowd behavior in Russia")+
+            theme(plot.title = element_text(hjust = 0.5, size = 20))
+
+ggarrange(p3,p4, p5, ncol = 1, nrow = 3)
+
+```
+
+```{r echo=FALSE, message=FALSE, warning=FALSE, fig.width=15, fig.height=10, fig.cap="Mask usage behavior in low-middle and high income countries"}
+library(epitools)
+tm_colnames = c("wear_mask_most_time_weighted", "wear_mask_half_time_weighted", 
+                "wear_mask_some_time_weighted", "wear_mask_none_time_weighted","cli_weighted")
+
+colors <- c("Wear mask most time" = "#60A1F5", "Wear mask half time" = "#83E68C", "Wear mask some time" = "#F5DD65", "Wear mask none time"="#954FF5", "COVID Like Illness (CLI)"="#FF0000")
+
+tm_country = union(low_income_country, low_mid_income_country)
+tm_country = union(tm_country, upper_mid_income_country)
+tm <- global_data[global_data$country_agg %in% tm_country, ]
+# tm$DateMonth <- as.month(tm$Date)
+tm_agg <- aggregate(tm[tm_colnames], by=tm["DateMonth"], mean)
+p1 <- ggplot(tm_agg, aes(x=DateMonth)) +
+        geom_line(aes(y=wear_mask_most_time_weighted, x=DateMonth, color="Wear mask most time"))+
+        geom_line(aes(y=wear_mask_half_time_weighted, x=DateMonth, color="Wear mask half time"))+
+        geom_line(aes(y=wear_mask_some_time_weighted, x=DateMonth, color="Wear mask some time"))+
+        geom_line(aes(y=wear_mask_none_time_weighted, x=DateMonth, color="Wear mask none time"))+
+        geom_line(aes(y=cli_weighted, x=DateMonth, color="COVID Like Illness (CLI)"))+
+        scale_color_manual(values=colors)+
+        labs(x = "Month",
+             y = "Reported people (%)",
+             color = "Behavior")+
+        ggtitle("Mask usage behavior in low-middle income countries")+
+            theme(plot.title = element_text(hjust = 0.5, size = 20))
+# 
+#         scale_x_discrete(breaks=c("4","5","6","7","8","9"),labels=c("APR","MAY","JUN", "JUL","AUG","SEP"))
+# axis(1,at=1:6, lables=c("APR","MAY","JUN", "JUL","AUG","SEP"))
+
+tm_country = high_income_country
+tm <- global_data[global_data$country_agg %in% tm_country, ]
+tm_agg <- aggregate(tm[tm_colnames], by=tm["DateMonth"], mean)
+p2 <- ggplot(tm_agg, aes(x=DateMonth)) +
+        geom_line(aes(y=wear_mask_most_time_weighted, x=DateMonth, color="Wear mask most time"))+
+        geom_line(aes(y=wear_mask_half_time_weighted, x=DateMonth, color="Wear mask half time"))+
+        geom_line(aes(y=wear_mask_some_time_weighted, x=DateMonth, color="Wear mask some time"))+
+        geom_line(aes(y=wear_mask_none_time_weighted, x=DateMonth, color="Wear mask none time"))+
+        geom_line(aes(y=cli_weighted, x=DateMonth, color="COVID Like Illness (CLI)"))+
+        scale_color_manual(values=colors)+
+        labs(x = "Month",
+             y = "Reported people (%)",
+             color = "Behavior")+
+        ggtitle("Mask usage behavior in high income countries")+
+            theme(plot.title = element_text(hjust = 0.5, size = 20))
+
+ggarrange(p1,p2, ncol = 1, nrow = 2)
+```
+```{r echo=FALSE, message=FALSE, warning=FALSE, fig.width=15, fig.height=10, fig.cap="Mask usage behavior in countries with the highest COVID cases (India, Brazil, Russia)"}
+tm_country = c("India")
+tm <- global_data[global_data$country_agg %in% tm_country, ]
+tm_agg <- aggregate(tm[tm_colnames], by=tm["DateMonth"], mean)
+p3 <- ggplot(tm_agg, aes(x=DateMonth)) +
+        geom_line(aes(y=wear_mask_most_time_weighted, x=DateMonth, color="Wear mask most time"))+
+        geom_line(aes(y=wear_mask_half_time_weighted, x=DateMonth, color="Wear mask half time"))+
+        geom_line(aes(y=wear_mask_some_time_weighted, x=DateMonth, color="Wear mask some time"))+
+        geom_line(aes(y=wear_mask_none_time_weighted, x=DateMonth, color="Wear mask none time"))+
+        geom_line(aes(y=cli_weighted, x=DateMonth, color="COVID Like Illness (CLI)"))+
+        scale_color_manual(values=colors)+
+        labs(x = "Month",
+             y = "Reported people (%)",
+             color = "Behavior")+
+        ggtitle("Mask usage behavior in India")+
+            theme(plot.title = element_text(hjust = 0.5, size = 20))
+
+tm_country = c("Brazil")
+tm <- global_data[global_data$country_agg %in% tm_country, ]
+tm_agg <- aggregate(tm[tm_colnames], by=tm["DateMonth"], mean)
+p4 <- ggplot(tm_agg, aes(x=DateMonth)) +
+        geom_line(aes(y=wear_mask_most_time_weighted, x=DateMonth, color="Wear mask most time"))+
+        geom_line(aes(y=wear_mask_half_time_weighted, x=DateMonth, color="Wear mask half time"))+
+        geom_line(aes(y=wear_mask_some_time_weighted, x=DateMonth, color="Wear mask some time"))+
+        geom_line(aes(y=wear_mask_none_time_weighted, x=DateMonth, color="Wear mask none time"))+
+        geom_line(aes(y=cli_weighted, x=DateMonth, color="COVID Like Illness (CLI)"))+
+        scale_color_manual(values=colors)+
+        labs(x = "Month",
+             y = "Reported people (%)",
+             color = "Behavior")+
+        ggtitle("Mask usage behavior in Brazil")+
+            theme(plot.title = element_text(hjust = 0.5, size = 20))
+
+tm_country = c("Russia")
+tm <- global_data[global_data$country_agg %in% tm_country, ]
+tm_agg <- aggregate(tm[tm_colnames], by=tm["DateMonth"], mean)
+p5 <- ggplot(tm_agg, aes(x=DateMonth)) +
+        geom_line(aes(y=wear_mask_most_time_weighted, x=DateMonth, color="Wear mask most time"))+
+        geom_line(aes(y=wear_mask_half_time_weighted, x=DateMonth, color="Wear mask half time"))+
+        geom_line(aes(y=wear_mask_some_time_weighted, x=DateMonth, color="Wear mask some time"))+
+        geom_line(aes(y=wear_mask_none_time_weighted, x=DateMonth, color="Wear mask none time"))+
+        geom_line(aes(y=cli_weighted, x=DateMonth, color="COVID Like Illness (CLI)"))+
+        scale_color_manual(values=colors)+
+        labs(x = "Month",
+             y = "Reported people (%)",
+             color = "Behavior")+
+        ggtitle("Mask usage behavior in Russia")+
+            theme(plot.title = element_text(hjust = 0.5, size = 20))
+
+ggarrange(p3,p4, p5, ncol = 1, nrow = 3)
+
+```
+
+```{r echo=FALSE, message=FALSE, warning=FALSE}
+plot_gen.mask_usage <- function(fig_title,which_month){
+  month_list <- c("JAN", "FEB", "MAR", "APR", "MAY", "JUN", "JUL", "AUG", "SEP", "OCT", "NOV")
+  if(which_month!=0){
+    fig_title <- paste(fig_title, " (Month: ", month_list[which_month]," 2020)", sep = "")
+  }
+  else{
+    fig_title <- paste(fig_title, " (Month: APR-SEP 2020)", sep = "")
+  }
+  
+  tm_colnames = c("cli_weighted",
+                      "wear_mask_most_time_weighted", "wear_mask_half_time_weighted", 
+                    "wear_mask_some_time_weighted", "wear_mask_none_time_weighted")
+  
+  tm_age_list <- c("18-34", "35-54", "55+", "overall")
+  tm_fill <- c("#60A1F5", "#83E68C", "#F5DD65", "#954FF5")
+  resFigList <- list()
+  
+  tm_country = union(low_income_country, low_mid_income_country)
+  tm_country = union(tm_country, upper_mid_income_country)
+  resFigList[[1]] <- plot_gen.income_country(tm_colnames, tm_country, tm_age_list,
+                                "Correlation between covid like illness (cli %) and usage of mask in low-middle income countries",
+                                which_month=which_month)
+  
+  tm_country = high_income_country
+  resFigList[[2]] <- plot_gen.income_country(tm_colnames, tm_country, tm_age_list,
+                                "Correlation between covid like illness (cli %) and usage of mask in high income countries",
+                                which_month=which_month)
+  
+  resFig1<-ggarrange(plotlist=resFigList, ncol = 1, nrow = 2)+
+    ggtitle(fig_title)+
+            theme(plot.title = element_text(hjust = 0.5, face="bold", size = 22))
+  
+  
+  tm_country = c("India")
+  resFigList[[3]] <- plot_gen.income_country(tm_colnames, tm_country, tm_age_list,
+                                "Correlation between covid like illness (cli %) and usage of mask in India",
+                                which_month=which_month)
+
+  tm_country = c("Brazil")
+  resFigList[[4]] <- plot_gen.income_country(tm_colnames, tm_country, tm_age_list,
+                                "Correlation between covid like illness (cli %) and usage of mask in Brazil",
+                                which_month=which_month)
+
+  tm_country = c("Russia")
+  resFigList[[5]] <- plot_gen.income_country(tm_colnames, tm_country, tm_age_list,
+                                "Correlation between covid like illness (cli %) and usage of mask in Russia",
+                                which_month=which_month)
+  resFig2<-ggarrange(resFigList[[3]],resFigList[[4]],resFigList[[5]], ncol = 1, nrow = 3)+
+    ggtitle("Correlation between covid like illness (cli %) and usage of mask in countries with highest COVID cases")+
+            theme(plot.title = element_text(hjust = 0.5, face="bold", size = 22))
+  
+  resFig<-ggarrange(resFig1,resFig2, ncol = 1, nrow = 2)
+  
+  return(resFig)
+}
+```
+```{r echo=FALSE, message=FALSE, warning=FALSE, fig.width=20, fig.height=20, fig.cap="Correlation between covid like illness (cli %) and usage of mask"}
+fig_title="Correlation between covid like illness (cli %) and usage of mask in low-middle and high income countries"
+plot_gen.mask_usage(fig_title, which_month = 0)
+# plot_gen.mask_usage(fig_title, which_month = 4)
+# plot_gen.mask_usage(fig_title, which_month = 5)
+# plot_gen.mask_usage(fig_title, which_month = 6)
+# plot_gen.mask_usage(fig_title, which_month = 7)
+# plot_gen.mask_usage(fig_title, which_month = 8)
+# plot_gen.mask_usage(fig_title, which_month = 9)
+```
+
+
+
+```{r echo=FALSE, message=FALSE, warning=FALSE, fig.width=25, fig.height=10, fig.cap="Lagged correlation between covid like illness (cli %) and usage of mask in low-middle and high income countries"}
+tm_colnames = c("wear_mask_most_time_weighted", "wear_mask_half_time_weighted", 
+                    "wear_mask_some_time_weighted", "wear_mask_none_time_weighted")
+tm_age_list <- c("18-34", "35-54", "55+", "overall")
+tm_fill <- c("#60A1F5", "#83E68C", "#F5DD65", "#954FF5")
+tm_country = union(low_income_country, low_mid_income_country)
+tm_country = union(tm_country, upper_mid_income_country)
+
+p1 <- plot_gen.income_country.lagged_corr(tm_colnames, tm_country, tm_age_list,
+                              "Lagged correlation between covid like illness (cli %) and usage of mask in low-middle income countries")
+
+tm_country = high_income_country
+p2 <- plot_gen.income_country.lagged_corr(tm_colnames, tm_country, tm_age_list,
+                              "Lagged correlation between covid like illness (cli %) and usage of mask in high income countries ")
+ggarrange(p1, p2, ncol = 1, nrow = 2)
+```
+```{r echo=FALSE, message=FALSE, warning=FALSE, fig.width=25, fig.height=15, fig.cap="Lagged correlation between covid like illness (cli %) and usage of mask in countries with highest COVID cases"}
+
+tm_country = c("India")
+p3 <- plot_gen.income_country.lagged_corr(tm_colnames, tm_country, tm_age_list,
+                              "Lagged correlation between covid like illness (cli %) and usage of mask in India")
+
+tm_country = c("Brazil")
+p4 <- plot_gen.income_country.lagged_corr(tm_colnames, tm_country, tm_age_list,
+                              "Lagged correlation between covid like illness (cli %) and usage of mask in Brazil")
+
+tm_country = c("Russia")
+p5 <- plot_gen.income_country.lagged_corr(tm_colnames, tm_country, tm_age_list,
+                              "Lagged correlation between covid like illness (cli %) and usage of mask in Russia")
+
+ggarrange(p3, p4, p5, ncol = 1, nrow = 3)
+```
+
+
+```{r echo=FALSE, message=FALSE, warning=FALSE, fig.width=15, fig.height=10, fig.cap="People worry of becoming ill in low-middle and high income countries"}
+tm_colnames = c("worried_ill_covid19_very_weighted", "worried_ill_covid19_somewhat_weighted", 
+                      "worried_ill_covid19_notTooWorried_weighted", "worried_ill_covid19_notWorried_weighted","cli_weighted")
+
+colors <- c("Very worried" = "#60A1F5", "Somewhat worried" = "#83E68C", "Not too worried" = "#F5DD65", "Not worried"="#954FF5", "COVID Like Illness (CLI)"="#FF0000")
+
+tm_country = union(low_income_country, low_mid_income_country)
+tm_country = union(tm_country, upper_mid_income_country)
+tm <- global_data[global_data$country_agg %in% tm_country, ]
+tm_agg <- aggregate(tm[tm_colnames], by=tm["DateMonth"], mean)
+p1 <- ggplot(tm_agg, aes(x=DateMonth)) +
+        geom_line(aes(y=worried_ill_covid19_very_weighted, x=DateMonth, color="Very worried"))+
+        geom_line(aes(y=worried_ill_covid19_somewhat_weighted, x=DateMonth, color="Somewhat worried"))+
+        geom_line(aes(y=worried_ill_covid19_notTooWorried_weighted, x=DateMonth, color="Not too worried"))+
+        geom_line(aes(y=worried_ill_covid19_notWorried_weighted, x=DateMonth, color="Not worried"))+
+        geom_line(aes(y=cli_weighted, x=DateMonth, color="COVID Like Illness (CLI)"))+
+        scale_color_manual(values=colors)+
+        labs(x = "Month",
+             y = "Reported people (%)",
+             color = "Behavior")+
+        ggtitle("People worry of becoming ill in low-middle income countries")+
+            theme(plot.title = element_text(hjust = 0.5, size = 20))
+
+tm_country = high_income_country
+tm <- global_data[global_data$country_agg %in% tm_country, ]
+tm_agg <- aggregate(tm[tm_colnames], by=tm["DateMonth"], mean)
+p2 <- ggplot(tm_agg, aes(x=DateMonth)) +
+        geom_line(aes(y=worried_ill_covid19_very_weighted, x=DateMonth, color="Very worried"))+
+        geom_line(aes(y=worried_ill_covid19_somewhat_weighted, x=DateMonth, color="Somewhat worried"))+
+        geom_line(aes(y=worried_ill_covid19_notTooWorried_weighted, x=DateMonth, color="Not too worried"))+
+        geom_line(aes(y=worried_ill_covid19_notWorried_weighted, x=DateMonth, color="Not worried"))+
+        geom_line(aes(y=cli_weighted, x=DateMonth, color="COVID Like Illness (CLI)"))+
+        scale_color_manual(values=colors)+
+        labs(x = "Month",
+             y = "Reported people (%)",
+             color = "Behavior")+
+        ggtitle("People worry of becoming ill  in high income countries")+
+            theme(plot.title = element_text(hjust = 0.5, size = 20))
+
+ggarrange(p1,p2, ncol = 1, nrow = 2)
+
+```
+```{r echo=FALSE, message=FALSE, warning=FALSE, fig.width=15, fig.height=10, fig.cap="People worry of becoming ill  in countries with the highest COVID cases (India, Brazil, Russia)"}
+tm_country = c("India")
+tm <- global_data[global_data$country_agg %in% tm_country, ]
+tm_agg <- aggregate(tm[tm_colnames], by=tm["DateMonth"], mean)
+p3 <- ggplot(tm_agg, aes(x=DateMonth)) +
+        geom_line(aes(y=worried_ill_covid19_very_weighted, x=DateMonth, color="Very worried"))+
+        geom_line(aes(y=worried_ill_covid19_somewhat_weighted, x=DateMonth, color="Somewhat worried"))+
+        geom_line(aes(y=worried_ill_covid19_notTooWorried_weighted, x=DateMonth, color="Not too worried"))+
+        geom_line(aes(y=worried_ill_covid19_notWorried_weighted, x=DateMonth, color="Not worried"))+
+        geom_line(aes(y=cli_weighted, x=DateMonth, color="COVID Like Illness (CLI)"))+
+        scale_color_manual(values=colors)+
+        labs(x = "Month",
+             y = "Reported people (%)",
+             color = "Behavior")+
+        ggtitle("People worry of becoming ill  in India")+
+            theme(plot.title = element_text(hjust = 0.5, size = 20))
+
+tm_country = c("Brazil")
+tm <- global_data[global_data$country_agg %in% tm_country, ]
+tm_agg <- aggregate(tm[tm_colnames], by=tm["DateMonth"], mean)
+p4 <- ggplot(tm_agg, aes(x=DateMonth)) +
+        geom_line(aes(y=worried_ill_covid19_very_weighted, x=DateMonth, color="Very worried"))+
+        geom_line(aes(y=worried_ill_covid19_somewhat_weighted, x=DateMonth, color="Somewhat worried"))+
+        geom_line(aes(y=worried_ill_covid19_notTooWorried_weighted, x=DateMonth, color="Not too worried"))+
+        geom_line(aes(y=worried_ill_covid19_notWorried_weighted, x=DateMonth, color="Not worried"))+
+        geom_line(aes(y=cli_weighted, x=DateMonth, color="COVID Like Illness (CLI)"))+
+        scale_color_manual(values=colors)+
+        labs(x = "Month",
+             y = "Reported people (%)",
+             color = "Behavior")+
+        ggtitle("People worry of becoming ill  in Brazil")+
+            theme(plot.title = element_text(hjust = 0.5, size = 20))
+
+tm_country = c("Russia")
+tm <- global_data[global_data$country_agg %in% tm_country, ]
+tm_agg <- aggregate(tm[tm_colnames], by=tm["DateMonth"], mean)
+p5 <- ggplot(tm_agg, aes(x=DateMonth)) +
+        geom_line(aes(y=worried_ill_covid19_very_weighted, x=DateMonth, color="Very worried"))+
+        geom_line(aes(y=worried_ill_covid19_somewhat_weighted, x=DateMonth, color="Somewhat worried"))+
+        geom_line(aes(y=worried_ill_covid19_notTooWorried_weighted, x=DateMonth, color="Not too worried"))+
+        geom_line(aes(y=worried_ill_covid19_notWorried_weighted, x=DateMonth, color="Not worried"))+
+        geom_line(aes(y=cli_weighted, x=DateMonth, color="COVID Like Illness (CLI)"))+
+        scale_color_manual(values=colors)+
+        labs(x = "Month",
+             y = "Reported people (%)",
+             color = "Behavior")+
+        ggtitle("People worry of becoming ill  in Russia")+
+            theme(plot.title = element_text(hjust = 0.5, size = 20))
+
+ggarrange(p3,p4, p5, ncol = 1, nrow = 3)+
+  ggtitle("People worry of becoming ill  in countries with the highest COVID cases (India, Brazil, Russia)")+
+            theme(plot.title = element_text(hjust = 0.5, face="bold", size = 22))
+
+```
+
+
+```{r echo=FALSE, message=FALSE, warning=FALSE, fig.width=20, fig.height=22.5}
+plot_gen.worried <- function(fig_title,which_month){
+  month_list <- c("JAN", "FEB", "MAR", "APR", "MAY", "JUN", "JUL", "AUG", "SEP", "OCT", "NOV")
+  if(which_month!=0){
+    fig_title <- paste(fig_title, " (Month: ", month_list[which_month]," 2020)", sep = "")
+  }
+  else{
+    fig_title <- paste(fig_title, " (Month: APR-SEP 2020)", sep = "")
+  }
+  
+  tm_colnames = c("cli_weighted",
+                      "worried_ill_covid19_very_weighted", "worried_ill_covid19_somewhat_weighted", 
+                      "worried_ill_covid19_notTooWorried_weighted", "worried_ill_covid19_notWorried_weighted")
+  
+  tm_age_list <- c("18-34", "35-54", "55+", "overall")
+  tm_fill <- c("#60A1F5", "#83E68C", "#F5DD65", "#954FF5")
+  resFigList <- list()
+  
+  tm_country = union(low_income_country, low_mid_income_country)
+  tm_country = union(tm_country, upper_mid_income_country)
+  resFigList[[1]] <- plot_gen.income_country(tm_colnames, tm_country, tm_age_list,
+                                "Correlation between covid like illness (cli %) and worried of becoming ill in low-middle income countries",
+                                which_month=which_month)
+  
+  tm_country = high_income_country
+  resFigList[[2]] <- plot_gen.income_country(tm_colnames, tm_country, tm_age_list,
+                                "Correlation between covid like illness (cli %) and worried of becoming ill in high income countries",
+                                which_month=which_month)
+  
+  resFig1<-ggarrange(plotlist=resFigList, ncol = 1, nrow = 2)+
+    ggtitle(fig_title)+
+            theme(plot.title = element_text(hjust = 0.5, face="bold", size = 22))
+  
+  tm_country = c("India")
+  resFigList[[3]] <- plot_gen.income_country(tm_colnames, tm_country, tm_age_list,
+                                "Correlation between covid like illness (cli %) and worried of becoming ill in India",
+                                which_month=which_month)
+  tm_country = c("Brazil")
+  resFigList[[4]] <- plot_gen.income_country(tm_colnames, tm_country, tm_age_list,
+                                "Correlation between covid like illness (cli %) and worried of becoming ill in Brazil",
+                                which_month=which_month)
+  
+  tm_country = c("Russia")
+  resFigList[[5]] <- plot_gen.income_country(tm_colnames, tm_country, tm_age_list,
+                                "Correlation between covid like illness (cli %) and worried of becoming ill in Russia",
+                                which_month=which_month)
+  resFig2<-ggarrange(resFigList[[3]],resFigList[[4]],resFigList[[5]], ncol = 1, nrow = 3)+
+    ggtitle("Correlation between covid like illness (cli %) and worried of becoming ill in countries with most COVID cases")+
+            theme(plot.title = element_text(hjust = 0.5, face="bold", size = 22))
+  
+  resFig <- ggarrange(resFig1,resFig2, ncol = 1, nrow = 3)
+  
+  return(resFig)
+}
+```
+```{r echo=FALSE, message=FALSE, warning=FALSE, fig.width=20, fig.height=20, fig.cap="Correlation between covid like illness (cli %) and worried of becoming ill"}
+fig_title="Correlation between covid like illness (cli %) and worried of becoming ill in low-middle and high income countries"
+plot_gen.worried(fig_title, which_month = 0)
+# plot_gen.worried(fig_title, which_month = 4)
+# plot_gen.worried(fig_title, which_month = 5)
+# plot_gen.worried(fig_title, which_month = 6)
+# plot_gen.worried(fig_title, which_month = 7)
+# plot_gen.worried(fig_title, which_month = 8)
+# plot_gen.worried(fig_title, which_month = 9)
+```
+
+```{r echo=FALSE, message=FALSE, warning=FALSE, fig.width=20, fig.height=10, fig.cap="Lagged correlation between covid like illness (cli %) and worried of becoming ill in low-middle and high income countries"}
+tm_colnames = c("worried_ill_covid19_very_weighted", "worried_ill_covid19_somewhat_weighted", 
+                      "worried_ill_covid19_notTooWorried_weighted", "worried_ill_covid19_notWorried_weighted")
+
+tm_age_list <- c("18-34", "35-54", "55+", "overall")
+tm_fill <- c("#60A1F5", "#83E68C", "#F5DD65", "#954FF5")
+tm_country = union(low_income_country, low_mid_income_country)
+tm_country = union(tm_country, upper_mid_income_country)
+
+p1 <- plot_gen.income_country.lagged_corr(tm_colnames, tm_country, tm_age_list,
+                              "Lagged correlation between covid like illness (cli %) and worried of becoming ill in low-middle income countries")
+
+tm_country = high_income_country
+p2 <- plot_gen.income_country.lagged_corr(tm_colnames, tm_country, tm_age_list,
+                              "Lagged correlation between covid like illness (cli %) and worried of becoming ill in high income countries ")
+
+ggarrange(p1, p2, ncol = 1, nrow = 2)
+```
+
+```{r echo=FALSE, message=FALSE, warning=FALSE, fig.width=20, fig.height=15, fig.cap="Lagged correlation between covid like illness (cli %) and worried of becoming ill in countries with highest COVID cases"}
+tm_country = c("India")
+p1 <- plot_gen.income_country.lagged_corr(tm_colnames, tm_country, tm_age_list,
+                              "Lagged correlation between covid like illness (cli %) and worried of becoming ill in India")
+
+tm_country = c("Brazil")
+p2 <- plot_gen.income_country.lagged_corr(tm_colnames, tm_country, tm_age_list,
+                              "Lagged correlation between covid like illness (cli %) and worried of becoming ill in Brazil")
+
+tm_country = c("Russia")
+p3 <- plot_gen.income_country.lagged_corr(tm_colnames, tm_country, tm_age_list,
+                              "Lagged correlation between covid like illness (cli %) and worried of becoming ill in Russia")
+
+ggarrange(p1, p2, p3, ncol = 1, nrow = 3)
+```
+
+```{r echo=FALSE, message=FALSE, warning=FALSE, fig.width=15, fig.height=10, fig.cap="People feel nervous in low-middle and high income countries"}
+tm_colnames = c("feel_nervous_all_time_weighted", "feel_nervous_most_time_weighted", 
+                      "feel_nervous_some_time_weighted", "feel_nervous_little_time_weighted",
+                      "feel_nervous_none_time_weighted","cli_weighted")
+
+colors <- c("Feel nervous all time" = "#60A1F5", "Feel nervous most time" = "#83E68C", "Feel nervous some time" = "#F5DD65", "Feel nervous little time"="#954FF5", "Feel nervous none time"="#F53BAA", "COVID Like Illness (CLI)"="#FF0000")
+
+tm_country = union(low_income_country, low_mid_income_country)
+tm_country = union(tm_country, upper_mid_income_country)
+tm <- global_data[global_data$country_agg %in% tm_country, ]
+tm_agg <- aggregate(tm[tm_colnames], by=tm["DateMonth"], mean)
+p1 <- ggplot(tm_agg, aes(x=DateMonth)) +
+        geom_line(aes(y=feel_nervous_all_time_weighted, x=DateMonth, color="Feel nervous all time"))+
+        geom_line(aes(y=feel_nervous_most_time_weighted, x=DateMonth, color="Feel nervous most time"))+
+        geom_line(aes(y=feel_nervous_some_time_weighted, x=DateMonth, color="Feel nervous some time"))+
+        geom_line(aes(y=feel_nervous_little_time_weighted, x=DateMonth, color="Feel nervous little time"))+
+        geom_line(aes(y=feel_nervous_none_time_weighted, x=DateMonth, color="Feel nervous none time"))+
+        geom_line(aes(y=cli_weighted, x=DateMonth, color="COVID Like Illness (CLI)"))+
+        scale_color_manual(values=colors)+
+        labs(x = "Month",
+             y = "Reported people (%)",
+             color = "Behavior")+
+        ggtitle("People feel nervous in low-middle income countries")+
+            theme(plot.title = element_text(hjust = 0.5, size = 20))
+
+tm_country = high_income_country
+tm <- global_data[global_data$country_agg %in% tm_country, ]
+tm_agg <- aggregate(tm[tm_colnames], by=tm["DateMonth"], mean)
+p2 <- ggplot(tm_agg, aes(x=DateMonth)) +
+        geom_line(aes(y=feel_nervous_all_time_weighted, x=DateMonth, color="Feel nervous all time"))+
+        geom_line(aes(y=feel_nervous_most_time_weighted, x=DateMonth, color="Feel nervous most time"))+
+        geom_line(aes(y=feel_nervous_some_time_weighted, x=DateMonth, color="Feel nervous some time"))+
+        geom_line(aes(y=feel_nervous_little_time_weighted, x=DateMonth, color="Feel nervous little time"))+
+        geom_line(aes(y=feel_nervous_none_time_weighted, x=DateMonth, color="Feel nervous none time"))+
+        geom_line(aes(y=cli_weighted, x=DateMonth, color="COVID Like Illness (CLI)"))+
+        scale_color_manual(values=colors)+
+        labs(x = "Month",
+             y = "Reported people (%)",
+             color = "Behavior")+
+        ggtitle("People feel nervous in high income countries")+
+            theme(plot.title = element_text(hjust = 0.5, size = 20))
+
+ggarrange(p1,p2, ncol = 1, nrow = 2)
+
+```
+```{r echo=FALSE, message=FALSE, warning=FALSE, fig.width=15, fig.height=10, fig.cap="People feel nervous in countries with the highest COVID cases (India, Brazil, Russia)"}
+tm_country = c("India")
+tm <- global_data[global_data$country_agg %in% tm_country, ]
+tm_agg <- aggregate(tm[tm_colnames], by=tm["DateMonth"], mean)
+p3 <- ggplot(tm_agg, aes(x=DateMonth)) +
+        geom_line(aes(y=feel_nervous_all_time_weighted, x=DateMonth, color="Feel nervous all time"))+
+        geom_line(aes(y=feel_nervous_most_time_weighted, x=DateMonth, color="Feel nervous most time"))+
+        geom_line(aes(y=feel_nervous_some_time_weighted, x=DateMonth, color="Feel nervous some time"))+
+        geom_line(aes(y=feel_nervous_little_time_weighted, x=DateMonth, color="Feel nervous little time"))+
+        geom_line(aes(y=feel_nervous_none_time_weighted, x=DateMonth, color="Feel nervous none time"))+
+        geom_line(aes(y=cli_weighted, x=DateMonth, color="COVID Like Illness (CLI)"))+
+        scale_color_manual(values=colors)+
+        labs(x = "Month",
+             y = "Reported people (%)",
+             color = "Behavior")+
+        ggtitle("People feel nervous in India")+
+            theme(plot.title = element_text(hjust = 0.5, size = 20))
+
+tm_country = c("Brazil")
+tm <- global_data[global_data$country_agg %in% tm_country, ]
+tm_agg <- aggregate(tm[tm_colnames], by=tm["DateMonth"], mean)
+p4 <- ggplot(tm_agg, aes(x=DateMonth)) +
+        geom_line(aes(y=feel_nervous_all_time_weighted, x=DateMonth, color="Feel nervous all time"))+
+        geom_line(aes(y=feel_nervous_most_time_weighted, x=DateMonth, color="Feel nervous most time"))+
+        geom_line(aes(y=feel_nervous_some_time_weighted, x=DateMonth, color="Feel nervous some time"))+
+        geom_line(aes(y=feel_nervous_little_time_weighted, x=DateMonth, color="Feel nervous little time"))+
+        geom_line(aes(y=feel_nervous_none_time_weighted, x=DateMonth, color="Feel nervous none time"))+
+        geom_line(aes(y=cli_weighted, x=DateMonth, color="COVID Like Illness (CLI)"))+
+        scale_color_manual(values=colors)+
+        labs(x = "Month",
+             y = "Reported people (%)",
+             color = "Behavior")+
+        ggtitle("People feel nervous in Brazil")+
+            theme(plot.title = element_text(hjust = 0.5, size = 20))
+
+tm_country = c("Russia")
+tm <- global_data[global_data$country_agg %in% tm_country, ]
+tm_agg <- aggregate(tm[tm_colnames], by=tm["DateMonth"], mean)
+p5 <- ggplot(tm_agg, aes(x=DateMonth)) +
+        geom_line(aes(y=feel_nervous_all_time_weighted, x=DateMonth, color="Feel nervous all time"))+
+        geom_line(aes(y=feel_nervous_most_time_weighted, x=DateMonth, color="Feel nervous most time"))+
+        geom_line(aes(y=feel_nervous_some_time_weighted, x=DateMonth, color="Feel nervous some time"))+
+        geom_line(aes(y=feel_nervous_little_time_weighted, x=DateMonth, color="Feel nervous little time"))+
+        geom_line(aes(y=feel_nervous_none_time_weighted, x=DateMonth, color="Feel nervous none time"))+
+        geom_line(aes(y=cli_weighted, x=DateMonth, color="COVID Like Illness (CLI)"))+
+        scale_color_manual(values=colors)+
+        labs(x = "Month",
+             y = "Reported people (%)",
+             color = "Behavior")+
+        ggtitle("People feel nervous  in Russia")+
+            theme(plot.title = element_text(hjust = 0.5, size = 20))
+
+ggarrange(p3,p4, p5, ncol = 1, nrow = 3)
+
+```
+
+
+```{r echo=FALSE, message=FALSE, warning=FALSE, fig.width=15, fig.height=10, fig.cap="People feel nervous in low-middle and high income countries"}
+tm_colnames = c("feel_depressed_all_time_weighted", "feel_depressed_most_time_weighted", 
+                      "feel_depressed_some_time_weighted", "feel_depressed_little_time_weighted",
+                      "feel_depressed_none_time_weighted","cli_weighted")
+
+colors <- c("Feel depressed all time" = "#60A1F5", "Feel depressed most time" = "#83E68C", "Feel depressed some time" = "#F5DD65", "Feel depressed little time"="#954FF5", "Feel depressed none time"="#F53BAA", "COVID Like Illness (CLI)"="#FF0000")
+
+tm_country = union(low_income_country, low_mid_income_country)
+tm_country = union(tm_country, upper_mid_income_country)
+tm <- global_data[global_data$country_agg %in% tm_country, ]
+tm_agg <- aggregate(tm[tm_colnames], by=tm["DateMonth"], mean)
+p1 <- ggplot(tm_agg, aes(x=DateMonth)) +
+        geom_line(aes(y=feel_depressed_all_time_weighted, x=DateMonth, color="Feel depressed all time"))+
+        geom_line(aes(y=feel_depressed_most_time_weighted, x=DateMonth, color="Feel depressed most time"))+
+        geom_line(aes(y=feel_depressed_some_time_weighted, x=DateMonth, color="Feel depressed some time"))+
+        geom_line(aes(y=feel_depressed_little_time_weighted, x=DateMonth, color="Feel depressed little time"))+
+        geom_line(aes(y=feel_depressed_none_time_weighted, x=DateMonth, color="Feel depressed none time"))+
+        geom_line(aes(y=cli_weighted, x=DateMonth, color="COVID Like Illness (CLI)"))+
+        scale_color_manual(values=colors)+
+        labs(x = "Month",
+             y = "Reported people (%)",
+             color = "Behavior")+
+        ggtitle("People feel depressed in low-middle income countries")+
+            theme(plot.title = element_text(hjust = 0.5, size = 20))
+
+tm_country = high_income_country
+tm <- global_data[global_data$country_agg %in% tm_country, ]
+tm_agg <- aggregate(tm[tm_colnames], by=tm["DateMonth"], mean)
+p2 <- ggplot(tm_agg, aes(x=DateMonth)) +
+        geom_line(aes(y=feel_depressed_all_time_weighted, x=DateMonth, color="Feel depressed all time"))+
+        geom_line(aes(y=feel_depressed_most_time_weighted, x=DateMonth, color="Feel depressed most time"))+
+        geom_line(aes(y=feel_depressed_some_time_weighted, x=DateMonth, color="Feel depressed some time"))+
+        geom_line(aes(y=feel_depressed_little_time_weighted, x=DateMonth, color="Feel depressed little time"))+
+        geom_line(aes(y=feel_depressed_none_time_weighted, x=DateMonth, color="Feel depressed none time"))+
+        geom_line(aes(y=cli_weighted, x=DateMonth, color="COVID Like Illness (CLI)"))+
+        scale_color_manual(values=colors)+
+        labs(x = "Month",
+             y = "Reported people (%)",
+             color = "Behavior")+
+        ggtitle("People feel depressed in high income countries")+
+            theme(plot.title = element_text(hjust = 0.5, size = 20))
+
+ggarrange(p1,p2, ncol = 1, nrow = 2)
+
+```
+```{r echo=FALSE, message=FALSE, warning=FALSE, fig.width=15, fig.height=10, fig.cap="People feel depressed in countries with the highest COVID cases (India, Brazil, Russia)"}
+tm_country = c("India")
+tm <- global_data[global_data$country_agg %in% tm_country, ]
+tm_agg <- aggregate(tm[tm_colnames], by=tm["DateMonth"], mean)
+p3 <- ggplot(tm_agg, aes(x=DateMonth)) +
+        geom_line(aes(y=feel_depressed_all_time_weighted, x=DateMonth, color="Feel depressed all time"))+
+        geom_line(aes(y=feel_depressed_most_time_weighted, x=DateMonth, color="Feel depressed most time"))+
+        geom_line(aes(y=feel_depressed_some_time_weighted, x=DateMonth, color="Feel depressed some time"))+
+        geom_line(aes(y=feel_depressed_little_time_weighted, x=DateMonth, color="Feel depressed little time"))+
+        geom_line(aes(y=feel_depressed_none_time_weighted, x=DateMonth, color="Feel depressed none time"))+
+        geom_line(aes(y=cli_weighted, x=DateMonth, color="COVID Like Illness (CLI)"))+
+        scale_color_manual(values=colors)+
+        labs(x = "Month",
+             y = "Reported people (%)",
+             color = "Behavior")+
+        ggtitle("People feel depressed in India")+
+            theme(plot.title = element_text(hjust = 0.5, size = 20))
+
+tm_country = c("Brazil")
+tm <- global_data[global_data$country_agg %in% tm_country, ]
+tm_agg <- aggregate(tm[tm_colnames], by=tm["DateMonth"], mean)
+p4 <- ggplot(tm_agg, aes(x=DateMonth)) +
+        geom_line(aes(y=feel_depressed_all_time_weighted, x=DateMonth, color="Feel depressed all time"))+
+        geom_line(aes(y=feel_depressed_most_time_weighted, x=DateMonth, color="Feel depressed most time"))+
+        geom_line(aes(y=feel_depressed_some_time_weighted, x=DateMonth, color="Feel depressed some time"))+
+        geom_line(aes(y=feel_depressed_little_time_weighted, x=DateMonth, color="Feel depressed little time"))+
+        geom_line(aes(y=feel_depressed_none_time_weighted, x=DateMonth, color="Feel depressed none time"))+
+        geom_line(aes(y=cli_weighted, x=DateMonth, color="COVID Like Illness (CLI)"))+
+        scale_color_manual(values=colors)+
+        labs(x = "Month",
+             y = "Reported people (%)",
+             color = "Behavior")+
+        ggtitle("People feel depressed in Brazil")+
+            theme(plot.title = element_text(hjust = 0.5, size = 20))
+
+tm_country = c("Russia")
+tm <- global_data[global_data$country_agg %in% tm_country, ]
+tm_agg <- aggregate(tm[tm_colnames], by=tm["DateMonth"], mean)
+p5 <- ggplot(tm_agg, aes(x=DateMonth)) +
+        geom_line(aes(y=feel_depressed_all_time_weighted, x=DateMonth, color="Feel depressed all time"))+
+        geom_line(aes(y=feel_depressed_most_time_weighted, x=DateMonth, color="Feel depressed most time"))+
+        geom_line(aes(y=feel_depressed_some_time_weighted, x=DateMonth, color="Feel depressed some time"))+
+        geom_line(aes(y=feel_depressed_little_time_weighted, x=DateMonth, color="Feel depressed little time"))+
+        geom_line(aes(y=feel_depressed_none_time_weighted, x=DateMonth, color="Feel depressed none time"))+
+        geom_line(aes(y=cli_weighted, x=DateMonth, color="COVID Like Illness (CLI)"))+
+        scale_color_manual(values=colors)+
+        labs(x = "Month",
+             y = "Reported people (%)",
+             color = "Behavior")+
+        ggtitle("People feel depressed  in Russia")+
+            theme(plot.title = element_text(hjust = 0.5, size = 20))
+
+ggarrange(p3,p4, p5, ncol = 1, nrow = 3)
+
+```
+
+
+
+
+```{r echo=FALSE, message=FALSE, warning=FALSE, fig.width=20, fig.height=22.5}
+plot_gen.psycho <- function(fig_title,which_month){
+  month_list <- c("JAN", "FEB", "MAR", "APR", "MAY", "JUN", "JUL", "AUG", "SEP", "OCT", "NOV")
+  if(which_month!=0){
+    fig_title <- paste(fig_title, " (Month: ", month_list[which_month]," 2020)", sep = "")
+  }
+  else{
+    fig_title <- paste(fig_title, " (Month: APR-SEP 2020)", sep = "")
+  }
+  
+  tm_colnames_nervous = c("cli_weighted",
+                      "feel_nervous_all_time_weighted", "feel_nervous_most_time_weighted", 
+                      "feel_nervous_some_time_weighted", "feel_nervous_little_time_weighted",
+                      "feel_nervous_none_time_weighted")
+  tm_colnames_depressed = c("cli_weighted",
+                      "feel_depressed_all_time_weighted", "feel_depressed_most_time_weighted", 
+                      "feel_depressed_some_time_weighted", "feel_depressed_little_time_weighted",
+                      "feel_depressed_none_time_weighted")
+  
+  tm_age_list <- c("18-34", "35-54", "55+", "overall")
+  tm_fill <- c("#60A1F5", "#83E68C", "#F5DD65", "#954FF5")
+  resFigList <- list()
+  
+  tm_country = union(low_income_country, low_mid_income_country)
+  tm_country = union(tm_country, upper_mid_income_country)
+  resFigList[[1]] <- plot_gen.income_country(tm_colnames_nervous, tm_country, tm_age_list,
+                                "Correlation between covid like illness (cli %) and psychological impact (nervousness) in low-middle income countries",
+                                which_month=which_month)
+  
+  tm_country = high_income_country
+  resFigList[[2]] <- plot_gen.income_country(tm_colnames_nervous, tm_country, tm_age_list,
+                                "Correlation between covid like illness (cli %) and psychological impact (nervousness) in high income countries",
+                                which_month=which_month)
+  
+  tm_country = union(low_income_country, low_mid_income_country)
+  tm_country = union(tm_country, upper_mid_income_country)
+  resFigList[[3]] <- plot_gen.income_country(tm_colnames_depressed, tm_country, tm_age_list,
+                                "Correlation between covid like illness (cli %) and psychological impact (depression) in low-middle income countries",
+                                which_month=which_month)
+  
+  tm_country = high_income_country
+  resFigList[[4]] <- plot_gen.income_country(tm_colnames_depressed, tm_country, tm_age_list,
+                                "Correlation between covid like illness (cli %) and psychological impact (depression) in high income countries",
+                                which_month=which_month)
+  
+  resFig<-ggarrange(plotlist=resFigList, ncol = 1, nrow = 4)+
+    ggtitle(fig_title)+
+            theme(plot.title = element_text(hjust = 0.5, face="bold", size = 22))
+  return(resFig)
+}
+```
+```{r echo=FALSE, message=FALSE, warning=FALSE, fig.width=20, fig.height=22.5, fig.cap="Correlation between covid like illness (cli %) and psychological impact in low-middle and high income countries"}
+fig_title="Correlation between covid like illness (cli %) and psychological impact in low-middle and high income countries"
+tm_fig<-plot_gen.psycho(fig_title, which_month = 0)
+tm_fig
+# plot_gen.psycho(fig_title, which_month = 4)
+# plot_gen.psycho(fig_title, which_month = 5)
+# plot_gen.psycho(fig_title, which_month = 6)
+# plot_gen.psycho(fig_title, which_month = 7)
+# plot_gen.psycho(fig_title, which_month = 8)
+# plot_gen.psycho(fig_title, which_month = 9)
+```
+
+```{r echo=FALSE, message=FALSE, warning=FALSE, fig.width=20, fig.height=22.5}
+plot_gen.psycho <- function(fig_title,which_month){
+  month_list <- c("JAN", "FEB", "MAR", "APR", "MAY", "JUN", "JUL", "AUG", "SEP", "OCT", "NOV")
+  if(which_month!=0){
+    fig_title <- paste(fig_title, " (Month: ", month_list[which_month]," 2020)", sep = "")
+  }
+  else{
+    fig_title <- paste(fig_title, " (Month: APR-SEP 2020)", sep = "")
+  }
+  
+  tm_colnames_nervous = c("cli_weighted",
+                      "feel_nervous_all_time_weighted", "feel_nervous_most_time_weighted", 
+                      "feel_nervous_some_time_weighted", "feel_nervous_little_time_weighted",
+                      "feel_nervous_none_time_weighted")
+  tm_colnames_depressed = c("cli_weighted",
+                      "feel_depressed_all_time_weighted", "feel_depressed_most_time_weighted", 
+                      "feel_depressed_some_time_weighted", "feel_depressed_little_time_weighted",
+                      "feel_depressed_none_time_weighted")
+  
+  tm_age_list <- c("18-34", "35-54", "55+", "overall")
+  tm_fill <- c("#60A1F5", "#83E68C", "#F5DD65", "#954FF5")
+  resFigList <- list()
+  
+  tm_country = c("India")
+  resFigList[[1]] <- plot_gen.income_country(tm_colnames_nervous, tm_country, tm_age_list,
+                                "Correlation between covid like illness (cli %) and psychological impact (nervousness) in India",
+                                which_month=which_month)
+  
+  tm_country = c("Brazil")
+  resFigList[[2]] <- plot_gen.income_country(tm_colnames_nervous, tm_country, tm_age_list,
+                                "Correlation between covid like illness (cli %) and psychological impact (nervousness) in Brazil",
+                                which_month=which_month)
+  
+  tm_country = c("Russia")
+  resFigList[[3]] <- plot_gen.income_country(tm_colnames_nervous, tm_country, tm_age_list,
+                                "Correlation between covid like illness (cli %) and psychological impact (nervousness) in Russia",
+                                which_month=which_month)
+  
+  tm_country = c("India")
+  resFigList[[4]] <- plot_gen.income_country(tm_colnames_depressed, tm_country, tm_age_list,
+                                "Correlation between covid like illness (cli %) and psychological impact (depression) in India",
+                                which_month=which_month)
+  
+  tm_country = c("Brazil")
+  resFigList[[5]] <- plot_gen.income_country(tm_colnames_depressed, tm_country, tm_age_list,
+                                "Correlation between covid like illness (cli %) and psychological impact (depression) in Brazil",
+                                which_month=which_month)
+  
+  tm_country = c("Russia")
+  resFigList[[6]] <- plot_gen.income_country(tm_colnames_depressed, tm_country, tm_age_list,
+                                "Correlation between covid like illness (cli %) and psychological impact (depression) in Russia",
+                                which_month=which_month)
+  
+  resFig<-ggarrange(plotlist=resFigList, ncol = 1, nrow = 6)+
+    ggtitle(fig_title)+
+            theme(plot.title = element_text(hjust = 0.5, face="bold", size = 22))
+  return(resFig)
+}
+```
+```{r echo=FALSE, message=FALSE, warning=FALSE, fig.width=20, fig.height=30, fig.cap="Correlation between covid like illness (cli %) and psychological impact in countries with highest COVID cases"}
+fig_title="Correlation between covid like illness (cli %) and psychological impact in countries with highest COVID cases"
+tm_fig<-plot_gen.psycho(fig_title, which_month = 0)
+tm_fig
+# plot_gen.psycho(fig_title, which_month = 4)
+# plot_gen.psycho(fig_title, which_month = 5)
+# plot_gen.psycho(fig_title, which_month = 6)
+# plot_gen.psycho(fig_title, which_month = 7)
+# plot_gen.psycho(fig_title, which_month = 8)
+# plot_gen.psycho(fig_title, which_month = 9)
+```
+
+
+
+```{r echo=FALSE, message=FALSE, warning=FALSE, fig.width=10, fig.height=3.75}
+plot_gen.income_country <- function(tm_colnames,tm_country, tm_gender,fig_title)
+{
+    tm_fill <- c("#60A1F5", "#83E68C", "#F5DD65", "#954FF5")
+    
+    figList <- list()
+    for(i in 1:4){
+      tm <- global_data[global_data$gender==tm_gender[i], ]
+      dim(tm)
+      tm <- tm[tm$country_agg %in% tm_country, tm_colnames]
+      dim(tm)
+      for ( col in 1:ncol(tm)){
+          colnames(tm)[col] <-  sub("_weighted", "", colnames(tm)[col])
+      }
+      tm_corr <- correlate(tm)
+    
+      tm_correlate_focus <- focus(tm_corr, cli)
+      #tm_correlate_focus <- mutate(tm_correlate_focus,rowname = factor(rowname, levels = rowname[order(cli)]))
+    
+      Namelist <- paste( "gender", i, sep = '' )
+      figList[[ Namelist ]] <- ggplot(tm_correlate_focus, aes(x = rowname, y = cli)) +
+          geom_bar(stat = "identity", fill=tm_fill[i], alpha=0.8) +
+          ylab("Correlation with cli") +
+          scale_x_discrete(labels = function(x) str_wrap(gsub("_", " ", x), width = 10))+
+          xlab("Behavioral aspects")+
+          ggtitle(paste("Gender: ", tm_gender[i], sep = ""))+
+          theme(plot.title = element_text(hjust = 0.5))
+          
+    }
+    
+    p1 <- ggarrange(figList$gender1, figList$gender2, figList$gender3, figList$gender4, ncol = 4, nrow = 1)+
+      ggtitle(fig_title)+
+          theme(plot.title = element_text(hjust = 0.5))
+    return(p1)
+}
+```
+```{r echo=FALSE, message=FALSE, warning=FALSE, fig.width=20, fig.height=7.5}
+# tm_colnames = c("cli_weighted",
+#                     "worked_outside_home_weighted", "grocery_outside_home_weighted", 
+#                     "ate_outside_home_weighted", "spent_time_with_non_hh_weighted",
+#                     "attended_public_event_weighted", "direct_contact_with_non_hh_weighted",
+#                     "used_public_transit_weighted")
+# tm_gender <- c("female", "male", "other", "overall")
+# tm_fill <- c("#60A1F5", "#83E68C", "#F5DD65", "#954FF5")
+# tm_country = union(low_income_country, low_mid_income_country)
+# tm_country = union(tm_country, upper_mid_income_country)
+# 
+# p1 <- plot_gen.income_country(tm_colnames, tm_country, tm_gender,
+#                               "Correlation between covid like illness (cli %) and various behavioural aspects in low-middle income countries ")
+# 
+# tm_country = high_income_country
+# p2 <- plot_gen.income_country(tm_colnames, tm_country, tm_gender,
+#                               "Correlation between covid like illness (cli %) and various behavioural aspects in high income countries ")
+# 
+# ggarrange(p1, p2, ncol = 1, nrow = 2)
+```
+
+```{r echo=FALSE, message=FALSE, warning=FALSE, fig.width=10, fig.height=3.75}
+plot_gen.us_states_gender <- function(tm_colnames, tm_gender,fig_title)
+{
+    tm_fill <- c("#60A1F5", "#83E68C", "#F5DD65", "#954FF5")
+    
+    figList <- list()
+    for(i in 1:3){
+      tm <- us_data[us_data$gender==tm_gender[i], tm_colnames]
+      
+      for ( col in 1:ncol(tm)){
+          colnames(tm)[col] <-  sub("_weighted", "", colnames(tm)[col])
+      }
+      for ( col in 1:ncol(tm)){
+          colnames(tm)[col] <-  sub("mean_", "", colnames(tm)[col])
+      }
+      tm_corr <- correlate(tm)
+    
+      tm_correlate_focus <- focus(tm_corr, cli)
+    
+      Namelist <- paste( "gender", i, sep = '' )
+      figList[[ Namelist ]] <- ggplot(tm_correlate_focus, aes(x = rowname, y = cli)) +
+          geom_bar(stat = "identity", fill=tm_fill[i], alpha=0.8) +
+          ylab("Correlation with cli") +
+          scale_x_discrete(labels = function(x) str_wrap(gsub("_", " ", x), width = 10))+
+          xlab("Behavioral aspects")+
+          ggtitle(paste("Gender: ", tm_gender[i], sep = ""))+
+          theme(plot.title = element_text(hjust = 0.5))
+          
+    }
+    
+    p1 <- ggarrange(plotlist=figList, ncol = 4, nrow = 1)+
+      ggtitle(fig_title)+
+          theme(plot.title = element_text(hjust = 0.5))
+    return(p1)
+}
+```
+```{r echo=FALSE, message=FALSE, warning=FALSE, fig.width=20, fig.height=3.75}
+# tm_colnames = c("cli_weighted",
+#                     "worked_outside_home_weighted", "avoid_contact_all_or_most_time_weighted", 
+#                     "mean_outside_hh_contact_at_work_ct_weighted", "mean_outside_hh_contact_shopping_ct_weighted",
+#                     "mean_outside_hh_contact_shopping_ct_weighted", "mean_outside_hh_contact_in_social_gatherings_ct_weighted")
+# 
+# tm_gender <- c("female", "male", "overall")
+# tm_fill <- c("#60A1F5", "#83E68C", "#F5DD65", "#954FF5")
+# 
+# p1 <- plot_gen.us_states_gender(tm_colnames, tm_gender,
+#                               "Correlation between covid like illness (cli %) and various behavioural aspects in USA")
+# 
+# p1
+```
+
+```{r echo=FALSE, message=FALSE, warning=FALSE}
+# tm_country = high_income_country
+# global_data$Date <- as.Date(global_data$date)
+# tm <- global_data[global_data$country_agg %in% tm_country, ]
+# 
+# tm_agg <- aggregate(tm["cli_weighted"], by=tm["Date"], sum)
+# p1 <- ggplot(tm_agg, aes(x=Date, y=cli_weighted)) +
+#   geom_line(na.rm = TRUE) + xlab("")
+# 
+# 
+# tm_country = union(low_income_country, low_mid_income_country)
+# tm_country = union(tm_country, upper_mid_income_country)
+# global_data$Date <- as.Date(global_data$date)
+# tm <- global_data[global_data$country_agg %in% tm_country, ]
+# 
+# tm_agg <- aggregate(tm["cli_weighted"], by=tm["Date"], sum)
+# p2 <- ggplot(tm_agg, aes(x=Date, y=cli_weighted)) +
+#   geom_line(na.rm = TRUE) + xlab("")
+# 
+# us_data$Date <- as.Date(us_data$date)
+# tm <- us_data
+# tm_agg <- aggregate(tm["cli_weighted"], by=tm["Date"], sum)
+# p3 <- ggplot(tm_agg, aes(x=Date, y=cli_weighted)) +
+#   geom_line(na.rm = TRUE) + xlab("")
+# 
+# p <- ggarrange(p1, p2, p3, ncol = 3, nrow = 1)
+# p
+```
+
+```{r echo=FALSE, message=FALSE, warning=FALSE}
+
+# tm_country = union(low_income_country, low_mid_income_country)
+# tm_country = union(tm_country, upper_mid_income_country)
+# global_data$Date <- as.Date(global_data$date)
+# tm <- global_data[global_data$country_agg %in% tm_country, ]
+# 
+# p <- ggplot(tm, aes(x=Date, y=cli_weighted)) +
+#   geom_line() + xlab("")
+# 
+# p <- p+scale_x_date(date_labels = "%b", date_breaks = "3 week")
+# p
+```
+
+```{r echo=FALSE, message=FALSE, warning=FALSE}
+
+# tm_country = high_income_country
+# global_data$Date <- as.Date(global_data$date)
+# tm <- global_data[global_data$country_agg %in% tm_country, ]
+# 
+# p <- ggplot(tm, aes(x=Date, y=cli_weighted)) +
+#   geom_point() + xlab("")
+# 
+# p <- p+scale_x_date(date_labels = "%b", date_breaks = "3 week")
+# p
+```
+
+```{r echo=FALSE, message=FALSE, warning=FALSE}
+
+# us_data$Date <- as.Date(us_data$date)
+# 
+# p <- ggplot(us_data, aes(x=Date, y=cli_weighted)) +
+#   geom_point() + xlab("")
+# 
+# p <- p+scale_x_date(date_labels = "%b", date_breaks = "3 week")
+# p
+```
+
+
+```{r echo=FALSE, message=FALSE, warning=FALSE}
+# lm1<-lm(cli_weighted ~ worked_outside_home_weighted + attended_public_event_weighted + used_public_transit_weighted, data=global_data)
+# summary(lm1)
+```
+
+```{r echo=FALSE, message=FALSE, warning=FALSE}
+# lm1<-lm(cli_weighted ~ worked_outside_home_weighted + grocery_outside_home_weighted + 
+#                   ate_outside_home_weighted + spent_time_with_non_hh_weighted +
+#                   attended_public_event_weighted + direct_contact_with_non_hh_weighted + 
+#                   used_public_transit_weighted , data=global_data)
+# lm1.step<-step(lm1, trace=F)
+# summary(lm1.step)
+```
+
+
+```{r echo=FALSE, message=FALSE, warning=FALSE}
+# p1<-ggplot(lm1, aes(.fitted, .resid))+geom_point() +
+#   geom_hline(yintercept=0, col="red", linetype="dashed") +
+#   geom_abline()+
+#   xlab("Fitted values")+ylab("Residuals") + 
+#   ggtitle("Residual vs Fitted Plot")+
+#   theme(plot.title = element_text(hjust = 0.5), plot.caption = element_text(hjust = 0.5))
+#   
+# p1
+```
+```{r echo=FALSE, message=FALSE, warning=FALSE}
+# p2<-ggplot(lm1, aes(qqnorm(.stdresid)[[1]], .stdresid))+geom_point() +
+#   geom_hline(yintercept=0, col="red", linetype="dashed") +
+#   geom_abline()+
+#   xlab("Theoretical Quantiles")+ylab("Standardized Residuals") + 
+#   ggtitle("Normal Q-Q")+
+#   theme(plot.title = element_text(hjust = 0.5), plot.caption = element_text(hjust = 0.5))
+# 
+# p2
+```
+
+```{r echo=FALSE, message=FALSE, warning=FALSE}
+# tm <- global_data[global_data$age_bucket=='overall',]
+# rf <- randomForest(cli_w ~ worked_outside_home_w + grocery_outside_home_w + 
+#                   ate_outside_home_w + spent_time_with_non_hh_w +
+#                   attended_public_event_w + direct_contact_with_non_hh_w + 
+#                   used_public_transit_w, data = tm, mtry = 3, 
+#                          importance = TRUE, na.action = na.omit) 
+```
+
+```{r echo=FALSE, message=FALSE, warning=FALSE}
+# plot(rf) 
+```
+
+
+
+
+
+
+
+
+
