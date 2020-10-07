@@ -1,5 +1,5 @@
 ---
-title: "Symptom Challenge"
+title: "Analyzing the Causal Crowd Behaviors of COVID-19 and the Impact of Pandemic on  Public Mental Health for Developing a Predictive Model of COVID-like-illness"
 output:
   pdf_document: 
     number_sections: true
@@ -236,29 +236,6 @@ plot_gen.us_states <- function(tm_colnames, tm_age_list,fig_title, which_month=0
     return(p1)
 }
 ```
-# Impact of crowd behavior on COVID like illness
-
-```{r echo=FALSE, message=FALSE, warning=FALSE, fig.width=25, fig.height=20, fig.cap="Correlation between COVID like illness (CLI %) and various behavioural aspects in low-middle and high income countries (APR-SEP 2020)"}
-tm_colnames = c("cli_weighted",
-                "no_public_weighted",
-                    "worked_outside_home_weighted", "grocery_outside_home_weighted", 
-                    "ate_outside_home_weighted", "spent_time_with_non_hh_weighted",
-                    "attended_public_event_weighted", "direct_contact_with_non_hh_weighted",
-                    "used_public_transit_weighted")
-tm_age_list <- c("18-34", "35-54", "55+", "overall")
-tm_fill <- c("#60A1F5", "#83E68C", "#F5DD65", "#954FF5")
-tm_country = union(low_income_country, low_mid_income_country)
-tm_country = union(tm_country, upper_mid_income_country)
-
-p1 <- plot_gen.income_country(tm_colnames, tm_country, tm_age_list,
-                              "Correlation between COVID like illness (CLI %) and various behavioural aspects in low-middle income countries ")
-
-tm_country = high_income_country
-p2 <- plot_gen.income_country(tm_colnames, tm_country, tm_age_list,
-                              "Correlation between COVID like illness (CLI %) and various behavioural aspects in high income countries ")
-
-ggarrange(p1, p2, ncol = 1, nrow = 3)
-```
 
 ```{r echo=FALSE, message=FALSE, warning=FALSE, fig.width=25, fig.height=20, fig.cap="Correlation between covid like illness (cli %) and various behavioural aspects in countries with the highest COVID cases (APR-SEP 2020)"}
 tm_colnames = c("cli_weighted",
@@ -300,6 +277,27 @@ ggarrange(p4, p1, p2, p3, ncol = 1, nrow = 4)
   #         theme(plot.title = element_text(hjust = 0.5, face="bold", size = 22))
 ```
 
+```{r echo=FALSE, message=FALSE, warning=FALSE, fig.width=25, fig.height=20, fig.cap="Correlation between COVID like illness (CLI %) and various behavioural aspects in low-middle and high income countries (APR-SEP 2020)"}
+tm_colnames = c("cli_weighted",
+                "no_public_weighted",
+                    "worked_outside_home_weighted", "grocery_outside_home_weighted", 
+                    "ate_outside_home_weighted", "spent_time_with_non_hh_weighted",
+                    "attended_public_event_weighted", "direct_contact_with_non_hh_weighted",
+                    "used_public_transit_weighted")
+tm_age_list <- c("18-34", "35-54", "55+", "overall")
+tm_fill <- c("#60A1F5", "#83E68C", "#F5DD65", "#954FF5")
+tm_country = union(low_income_country, low_mid_income_country)
+tm_country = union(tm_country, upper_mid_income_country)
+
+p1 <- plot_gen.income_country(tm_colnames, tm_country, tm_age_list,
+                              "Correlation between COVID like illness (CLI %) and various behavioural aspects in low-middle income countries ")
+
+tm_country = high_income_country
+p2 <- plot_gen.income_country(tm_colnames, tm_country, tm_age_list,
+                              "Correlation between COVID like illness (CLI %) and various behavioural aspects in high income countries ")
+
+ggarrange(p1, p2, ncol = 1, nrow = 3)
+```
 
 
 
@@ -571,7 +569,7 @@ plot_gen.income_country.lagged_corr <- function(tm_colnames,tm_country, tm_age_l
 }
 ```
 
-```{r echo=FALSE, message=FALSE, warning=FALSE, fig.width=25, fig.height=10,fig.cap="Lagged correlation between covid like illness (cli %) and various behavioural aspects in low-middle and high income countries"}
+```{r echo=FALSE, message=FALSE, warning=FALSE, fig.width=25, fig.height=10,fig.cap="Lagged correlation between CLI and various behavioural aspects in low-middle and high income countries"}
 tm_colnames = c("no_public_weighted","worked_outside_home_weighted", "grocery_outside_home_weighted", 
                     "ate_outside_home_weighted", "spent_time_with_non_hh_weighted",
                     "attended_public_event_weighted", "direct_contact_with_non_hh_weighted",
@@ -589,12 +587,12 @@ tm_country = high_income_country
 p2 <- plot_gen.income_country.lagged_corr(tm_colnames, tm_country, tm_age_list,
                               "Lagged correlation between covid like illness (cli %) and various behavioural aspects in high income countries ")
 
-tm_fig <- ggarrange(p1, p2, ncol = 1, nrow = 2)+
-  ggtitle("")+
-          theme(plot.title = element_text(hjust = 0.5, face="bold", size = 22))
+tm_fig <- ggarrange(p1, p2, ncol = 1, nrow = 2)
 tm_fig
 ```
-```{r echo=FALSE, message=FALSE, warning=FALSE, fig.width=25, fig.height=15,fig.cap="Lagged correlation between covid like illness (cli %) and various behavioural aspects in countries with highest COVID cases"}
+
+
+```{r echo=FALSE, message=FALSE, warning=FALSE, fig.width=25, fig.height=15,fig.cap="Lagged correlation between CLI and various behavioural aspects in countries with highest COVID cases"}
 tm_country = c("India")
 p3 <- plot_gen.income_country.lagged_corr(tm_colnames, tm_country, tm_age_list,
                               "Lagged correlation between covid like illness (cli %) and various behavioural aspects in India")
@@ -607,9 +605,7 @@ tm_country = c("Russia")
 p5 <- plot_gen.income_country.lagged_corr(tm_colnames, tm_country, tm_age_list,
                               "Lagged correlation between covid like illness (cli %) and various behavioural aspects in Russia")
 
-tm_fig<-ggarrange(p3, p4, p5, ncol = 1, nrow = 3)+
-  ggtitle("")+
-          theme(plot.title = element_text(hjust = 0.5, face="bold", size = 22))
+tm_fig<-ggarrange(p3, p4, p5, ncol = 1, nrow = 3)
 tm_fig
 ```
 
@@ -778,8 +774,12 @@ p2 <- ggplot(tm_agg, aes(x=DateMonth)) +
         ggtitle("Mask usage behavior in high income countries")+
             theme(plot.title = element_text(hjust = 0.5, size = 20))
 
-ggarrange(p1,p2, ncol = 1, nrow = 2)
+tm_fig<-ggarrange(p1,p2, ncol = 1, nrow = 2)
+tm_fig
+
 ```
+
+
 ```{r echo=FALSE, message=FALSE, warning=FALSE, fig.width=15, fig.height=10, fig.cap="Mask usage behavior in countries with the highest COVID cases (India, Brazil, Russia)"}
 tm_country = c("India")
 tm <- global_data[global_data$country_agg %in% tm_country, ]
@@ -829,9 +829,12 @@ p5 <- ggplot(tm_agg, aes(x=DateMonth)) +
         ggtitle("Mask usage behavior in Russia")+
             theme(plot.title = element_text(hjust = 0.5, size = 20))
 
-ggarrange(p3,p4, p5, ncol = 1, nrow = 3)
+tm_fig<-ggarrange(p3,p4, p5, ncol = 1, nrow = 3)
+tm_fig
 
 ```
+
+
 
 ```{r echo=FALSE, message=FALSE, warning=FALSE}
 plot_gen.mask_usage <- function(fig_title,which_month){
@@ -890,15 +893,10 @@ plot_gen.mask_usage <- function(fig_title,which_month){
   return(resFig)
 }
 ```
-```{r echo=FALSE, message=FALSE, warning=FALSE, fig.width=20, fig.height=20, fig.cap="Correlation between covid like illness (cli %) and usage of mask"}
-fig_title="Correlation between covid like illness (cli %) and usage of mask in low-middle and high income countries"
-plot_gen.mask_usage(fig_title, which_month = 0)
-# plot_gen.mask_usage(fig_title, which_month = 4)
-# plot_gen.mask_usage(fig_title, which_month = 5)
-# plot_gen.mask_usage(fig_title, which_month = 6)
-# plot_gen.mask_usage(fig_title, which_month = 7)
-# plot_gen.mask_usage(fig_title, which_month = 8)
-# plot_gen.mask_usage(fig_title, which_month = 9)
+```{r echo=FALSE, message=FALSE, warning=FALSE, fig.width=20, fig.height=20, fig.cap="Correlation between CLI and usage of mask"}
+fig_title <- ""
+tm_fig<-plot_gen.mask_usage(fig_title, which_month = 0)
+tm_fig
 ```
 
 
@@ -917,9 +915,12 @@ p1 <- plot_gen.income_country.lagged_corr(tm_colnames, tm_country, tm_age_list,
 tm_country = high_income_country
 p2 <- plot_gen.income_country.lagged_corr(tm_colnames, tm_country, tm_age_list,
                               "Lagged correlation between covid like illness (cli %) and usage of mask in high income countries ")
-ggarrange(p1, p2, ncol = 1, nrow = 2)
+tm_fig<-ggarrange(p1, p2, ncol = 1, nrow = 2)
+tm_fig
+
+
 ```
-```{r echo=FALSE, message=FALSE, warning=FALSE, fig.width=25, fig.height=15, fig.cap="Lagged correlation between covid like illness (cli %) and usage of mask in countries with highest COVID cases"}
+```{r echo=FALSE, message=FALSE, warning=FALSE, fig.width=25, fig.height=15, fig.cap="Lagged correlation between CLI and usage of mask in countries with highest COVID cases"}
 
 tm_country = c("India")
 p3 <- plot_gen.income_country.lagged_corr(tm_colnames, tm_country, tm_age_list,
@@ -933,7 +934,51 @@ tm_country = c("Russia")
 p5 <- plot_gen.income_country.lagged_corr(tm_colnames, tm_country, tm_age_list,
                               "Lagged correlation between covid like illness (cli %) and usage of mask in Russia")
 
-ggarrange(p3, p4, p5, ncol = 1, nrow = 3)
+tm_fig<-ggarrange(p3, p4, p5, ncol = 1, nrow = 3)
+tm_fig
+
+```
+
+```{r echo=FALSE, message=FALSE, warning=FALSE, fig.width=25, fig.height=10, fig.cap="Lagged correlation between CLI and people worry of becoming ill in low-middle and high income countries"}
+tm_colnames = c("worried_ill_covid19_very_weighted", "worried_ill_covid19_somewhat_weighted", 
+                      "worried_ill_covid19_notTooWorried_weighted", "worried_ill_covid19_notWorried_weighted","cli_weighted")
+tm_age_list <- c("18-34", "35-54", "55+", "overall")
+tm_fill <- c("#60A1F5", "#83E68C", "#F5DD65", "#954FF5")
+tm_country = union(low_income_country, low_mid_income_country)
+tm_country = union(tm_country, upper_mid_income_country)
+
+p1 <- plot_gen.income_country.lagged_corr(tm_colnames, tm_country, tm_age_list,
+                              "Lagged correlation between covid like illness (cli %) and people worry of becoming ill in low-middle income countries")
+
+tm_country = high_income_country
+p2 <- plot_gen.income_country.lagged_corr(tm_colnames, tm_country, tm_age_list,
+                              "Lagged correlation between covid like illness (cli %) and people worry of becoming ill in high income countries ")
+tm_fig<-ggarrange(p1, p2, ncol = 1, nrow = 2)
+tm_fig
+```
+
+```{r echo=FALSE, message=FALSE, warning=FALSE, fig.width=25, fig.height=10, fig.cap="Lagged correlation between CLI and people worry of becoming ill in countries with most COVID-19 cases (India, Brazil, Russia)"}
+tm_colnames = c("worried_ill_covid19_very_weighted", "worried_ill_covid19_somewhat_weighted", 
+                      "worried_ill_covid19_notTooWorried_weighted", "worried_ill_covid19_notWorried_weighted","cli_weighted")
+tm_age_list <- c("18-34", "35-54", "55+", "overall")
+tm_fill <- c("#60A1F5", "#83E68C", "#F5DD65", "#954FF5")
+tm_country = union(low_income_country, low_mid_income_country)
+tm_country = union(tm_country, upper_mid_income_country)
+
+tm_country = c("India")
+p1 <- plot_gen.income_country.lagged_corr(tm_colnames, tm_country, tm_age_list,
+                              "Lagged correlation between covid like illness (cli %) and people worry of becoming ill in India")
+
+tm_country = c("Brazil")
+p2 <- plot_gen.income_country.lagged_corr(tm_colnames, tm_country, tm_age_list,
+                              "Lagged correlation between covid like illness (cli %) and people worry of becoming ill in Brazil")
+
+tm_country = c("Russia")
+p3 <- plot_gen.income_country.lagged_corr(tm_colnames, tm_country, tm_age_list,
+                              "Lagged correlation between covid like illness (cli %) and people worry of becoming ill in Russia")
+
+tm_fig<-ggarrange(p1, p2, p3, ncol = 1, nrow = 3)
+tm_fig
 ```
 
 
@@ -976,9 +1021,13 @@ p2 <- ggplot(tm_agg, aes(x=DateMonth)) +
         ggtitle("People worry of becoming ill  in high income countries")+
             theme(plot.title = element_text(hjust = 0.5, size = 20))
 
-ggarrange(p1,p2, ncol = 1, nrow = 2)
+tm_fig<-ggarrange(p1,p2, ncol = 1, nrow = 2)
+tm_fig
 
 ```
+
+
+
 ```{r echo=FALSE, message=FALSE, warning=FALSE, fig.width=15, fig.height=10, fig.cap="People worry of becoming ill  in countries with the highest COVID cases (India, Brazil, Russia)"}
 tm_country = c("India")
 tm <- global_data[global_data$country_agg %in% tm_country, ]
@@ -1028,9 +1077,8 @@ p5 <- ggplot(tm_agg, aes(x=DateMonth)) +
         ggtitle("People worry of becoming ill  in Russia")+
             theme(plot.title = element_text(hjust = 0.5, size = 20))
 
-ggarrange(p3,p4, p5, ncol = 1, nrow = 3)+
-  ggtitle("People worry of becoming ill  in countries with the highest COVID cases (India, Brazil, Russia)")+
-            theme(plot.title = element_text(hjust = 0.5, face="bold", size = 22))
+tm_fig<-ggarrange(p3,p4, p5, ncol = 1, nrow = 3)
+tm_fig
 
 ```
 
@@ -1092,14 +1140,10 @@ plot_gen.worried <- function(fig_title,which_month){
 ```
 ```{r echo=FALSE, message=FALSE, warning=FALSE, fig.width=20, fig.height=20, fig.cap="Correlation between covid like illness (cli %) and worried of becoming ill"}
 fig_title="Correlation between covid like illness (cli %) and worried of becoming ill in low-middle and high income countries"
-plot_gen.worried(fig_title, which_month = 0)
-# plot_gen.worried(fig_title, which_month = 4)
-# plot_gen.worried(fig_title, which_month = 5)
-# plot_gen.worried(fig_title, which_month = 6)
-# plot_gen.worried(fig_title, which_month = 7)
-# plot_gen.worried(fig_title, which_month = 8)
-# plot_gen.worried(fig_title, which_month = 9)
+tm_fig<-plot_gen.worried(fig_title, which_month = 0)
+tm_fig
 ```
+
 
 ```{r echo=FALSE, message=FALSE, warning=FALSE, fig.width=20, fig.height=10, fig.cap="Lagged correlation between covid like illness (cli %) and worried of becoming ill in low-middle and high income countries"}
 tm_colnames = c("worried_ill_covid19_very_weighted", "worried_ill_covid19_somewhat_weighted", 
@@ -1117,7 +1161,9 @@ tm_country = high_income_country
 p2 <- plot_gen.income_country.lagged_corr(tm_colnames, tm_country, tm_age_list,
                               "Lagged correlation between covid like illness (cli %) and worried of becoming ill in high income countries ")
 
-ggarrange(p1, p2, ncol = 1, nrow = 2)
+tm_fig<-ggarrange(p1, p2, ncol = 1, nrow = 2)
+tm_fig
+
 ```
 
 ```{r echo=FALSE, message=FALSE, warning=FALSE, fig.width=20, fig.height=15, fig.cap="Lagged correlation between covid like illness (cli %) and worried of becoming ill in countries with highest COVID cases"}
@@ -1133,7 +1179,8 @@ tm_country = c("Russia")
 p3 <- plot_gen.income_country.lagged_corr(tm_colnames, tm_country, tm_age_list,
                               "Lagged correlation between covid like illness (cli %) and worried of becoming ill in Russia")
 
-ggarrange(p1, p2, p3, ncol = 1, nrow = 3)
+tm_fig<-ggarrange(p1, p2, p3, ncol = 1, nrow = 3)
+tm_fig
 ```
 
 ```{r echo=FALSE, message=FALSE, warning=FALSE, fig.width=15, fig.height=10, fig.cap="People feel nervous in low-middle and high income countries"}
@@ -1178,9 +1225,10 @@ p2 <- ggplot(tm_agg, aes(x=DateMonth)) +
         ggtitle("People feel nervous in high income countries")+
             theme(plot.title = element_text(hjust = 0.5, size = 20))
 
-ggarrange(p1,p2, ncol = 1, nrow = 2)
-
+tm_fig<-ggarrange(p1,p2, ncol = 1, nrow = 2)
+tm_fig
 ```
+
 ```{r echo=FALSE, message=FALSE, warning=FALSE, fig.width=15, fig.height=10, fig.cap="People feel nervous in countries with the highest COVID cases (India, Brazil, Russia)"}
 tm_country = c("India")
 tm <- global_data[global_data$country_agg %in% tm_country, ]
@@ -1233,8 +1281,8 @@ p5 <- ggplot(tm_agg, aes(x=DateMonth)) +
         ggtitle("People feel nervous  in Russia")+
             theme(plot.title = element_text(hjust = 0.5, size = 20))
 
-ggarrange(p3,p4, p5, ncol = 1, nrow = 3)
-
+tm_fig<-ggarrange(p3,p4, p5, ncol = 1, nrow = 3)
+tm_fig
 ```
 
 
@@ -1280,8 +1328,8 @@ p2 <- ggplot(tm_agg, aes(x=DateMonth)) +
         ggtitle("People feel depressed in high income countries")+
             theme(plot.title = element_text(hjust = 0.5, size = 20))
 
-ggarrange(p1,p2, ncol = 1, nrow = 2)
-
+tm_fig<-ggarrange(p1,p2, ncol = 1, nrow = 2)
+tm_fig
 ```
 ```{r echo=FALSE, message=FALSE, warning=FALSE, fig.width=15, fig.height=10, fig.cap="People feel depressed in countries with the highest COVID cases (India, Brazil, Russia)"}
 tm_country = c("India")
@@ -1335,9 +1383,10 @@ p5 <- ggplot(tm_agg, aes(x=DateMonth)) +
         ggtitle("People feel depressed  in Russia")+
             theme(plot.title = element_text(hjust = 0.5, size = 20))
 
-ggarrange(p3,p4, p5, ncol = 1, nrow = 3)
-
+tm_fig<-ggarrange(p3,p4, p5, ncol = 1, nrow = 3)
+tm_fig
 ```
+
 
 
 
