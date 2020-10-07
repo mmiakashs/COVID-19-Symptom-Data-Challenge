@@ -1,3 +1,5 @@
 report.pdf
 report.nb.html
 report.Rmd
+.ipynb_checkpoints/*
+report_symptom.log
